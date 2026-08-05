@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="voice_keyboard"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_voice_keyboard_short"
+        android:shortcutLongLabel="@string/shortcut_voice_keyboard_long"
+    >
+        <intent
+            android:action="com.pimax.whisperflow.ACTION_VOICE_KEYBOARD"
+            android:targetPackage="com.pimax.whisperflow"
+            android:targetClass="com.pimax.whisperflow.VoiceKeyboardTriggerActivity"
+        />
+    </shortcut>
+</shortcuts>

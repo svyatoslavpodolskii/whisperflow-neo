@@ -1,0 +1,36 @@
+# Built outputs
+/build
+/app/build
+/wear/build
+*.apk
+*.aab
+
+# Gradle internals
+/.gradle
+/local.properties
+gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+
+# IDE
+.idea/
+*.iml
+*.iws
+.DS_Store
+
+# Android keystore (never commit)
+*.jks
+*.keystore
+secrets.properties
+
+# Databases
+*.db
+
+# Private dev notes & personal infrastructure references
+/logs/
+/redesign/
+/screen.png
+/screen_fixed.png
+/FLOW.md
+/SNAKE.md
+/stuck.md
+/NEW_README.md

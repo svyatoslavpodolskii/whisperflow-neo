@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#0D0D12">
+
+    <!-- Thin accent line at top -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#33FF8B00" />
+
+    <!-- Main keyboard bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <!-- Switch keyboard button -->
+        <ImageButton
+            android:id="@+id/btn_switch_keyboard"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_sort_by_size"
+            android:contentDescription="Switch keyboard"
+            android:tint="#7A7580"
+            android:scaleType="centerInside"
+            android:padding="8dp" />
+
+        <!-- Status text -->
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Tap mic to transcribe"
+            android:textColor="#7A7580"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.04"
+            android:gravity="center"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <!-- Record / mic button -->
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp">
+
+            <!-- Glow ring (visible when recording) -->
+            <View
+                android:id="@+id/view_glow"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center"
+                android:background="@drawable/mic_button_recording_bg"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/btn_mic"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_gravity="center"
+                android:background="@drawable/mic_button_bg"
+                android:src="@android:drawable/ic_btn_speak_now"
+                android:contentDescription="Record"
+                android:tint="#0D0D12"
+                android:scaleType="centerInside"
+                android:padding="10dp" />
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <!-- Live transcription preview (hidden by default) -->
+    <LinearLayout
+        android:id="@+id/live_preview_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <!-- Recording indicator dot -->
+        <View
+            android:id="@+id/view_recording_dot"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:background="@drawable/recording_dot_bg"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_live_preview"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text=""
+            android:textColor="#F5F0EB"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif"
+            android:maxLines="3"
+            android:ellipsize="end" />
+
+        <!-- Duration display -->
+        <TextView
+            android:id="@+id/tv_duration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="0.0"
+            android:textColor="#FF8B00"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-light"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- Processing indicator (hidden by default) -->
+    <LinearLayout
+        android:id="@+id/processing_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingTop="4dp"
+        android:paddingBottom="10dp"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:indeterminate="true"
+            android:indeterminateTint="#FF8B00" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="Processing on GPU..."
+            android:textColor="#CCFF8B00"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
+
+</LinearLayout>

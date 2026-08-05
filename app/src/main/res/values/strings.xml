@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">WhisperFlow</string>
+    <string
+        name="accessibility_description"
+    >Enables Volume PTT and voice keyboard app actions for WhisperFlow.</string>
+    <string name="shortcut_voice_keyboard_short">Voice Keyboard</string>
+    <string
+        name="shortcut_voice_keyboard_long"
+    >WhisperFlow Voice Keyboard</string>
+    <string
+        name="voice_keyboard_action_label"
+    >WhisperFlow Voice Keyboard</string>
+</resources>

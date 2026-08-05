@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.pimax.whisperflow.MainActivity"
+    android:icon="@drawable/ic_launcher_foreground"
+    android:isDefault="false">
+    <subtype
+        android:imeSubtypeMode="voice"
+        android:label="WhisperFlow Voice"
+        android:imeSubtypeLocale="en_US" />
+</input-method>
