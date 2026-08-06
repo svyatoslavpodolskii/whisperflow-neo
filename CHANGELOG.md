@@ -2,6 +2,14 @@
 
 All notable changes to WhisperFlow are documented here.
 
+## [2.6] — Unified PI SERVER URL
+
+- **Single base URL** — configure `serverUrl` once in Settings; all services (LLM Gateway :8068, Tasks :8058, Streak :8055, Assistant :8073, Auth :8100) derive their endpoints automatically from the same host
+- **Connections tab decluttered** — removed individual URL fields for Tasks, Streak, and Assistant; toggles + status dots remain
+- **PI SERVER card** — merged "Whisper Server" and "LLM Gateway" URL cards into one unified card visible for both GPU_SERVER and LLM_GATEWAY modes; shows derived gateway endpoint in LLM_GATEWAY mode
+- **No more URL drift** — changing the server IP once propagates everywhere; eliminates the "wrong IP" class of connection failures
+
+
 ## [2.5] — Voice Keyboard Mode (Partial)
 
 - **Voice Keyboard overlay** — `TYPE_ACCESSIBILITY_OVERLAY` top bar; does not use assistant session, avoids home-screen takeover

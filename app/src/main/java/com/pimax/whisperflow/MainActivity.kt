@@ -205,24 +205,26 @@ fun MainScreen(audioRecorder: AudioRecorder) {
     var task by remember { mutableStateOf(SettingsDataStore.DEFAULT_TASK) }
     var inferenceMode by remember { mutableStateOf(SettingsDataStore.DEFAULT_INFERENCE_MODE) }
     var localModel by remember { mutableStateOf(SettingsDataStore.DEFAULT_LOCAL_MODEL) }
-    var gatewayUrl by remember { mutableStateOf(SettingsDataStore.DEFAULT_GATEWAY_URL) }
     var isServerOnline by remember { mutableStateOf<Boolean?>(null) }
     var isGatewayOnline by remember { mutableStateOf<Boolean?>(null) }
     var liveChunkingEnabled by remember { mutableStateOf(true) }
 
+    // All service URLs derived from serverUrl — configure server once in Settings
+    val gatewayUrl = deriveServiceUrl(serverUrl, 8068)
+    val tasksUrl = deriveServiceUrl(serverUrl, 8058)
+    val streakUrl = deriveServiceUrl(serverUrl, 8055)
+    val assistantUrl = deriveServiceUrl(serverUrl, 8073)
+
     // Tasks connection state
     var tasksEnabled by remember { mutableStateOf(false) }
-    var tasksUrl by remember { mutableStateOf(SettingsDataStore.DEFAULT_TASKS_URL) }
     var isTasksOnline by remember { mutableStateOf<Boolean?>(null) }
 
     // Streak Tracker connection state
     var streakEnabled by remember { mutableStateOf(false) }
-    var streakUrl by remember { mutableStateOf(SettingsDataStore.DEFAULT_STREAK_URL) }
     var isStreakOnline by remember { mutableStateOf<Boolean?>(null) }
 
     // Voice Assistant connection state
     var assistantEnabled by remember { mutableStateOf(false) }
-    var assistantUrl by remember { mutableStateOf(SettingsDataStore.DEFAULT_ASSISTANT_URL) }
     var isAssistantOnline by remember { mutableStateOf<Boolean?>(null) }
 
     var isRefreshingConnections by remember { mutableStateOf(false) }
@@ -338,19 +340,10 @@ fun MainScreen(audioRecorder: AudioRecorder) {
         val lastText = settingsStore.lastTranscription.first()
         if (lastText.isNotEmpty()) transcriptionText = lastText
 
-        // Load tasks settings
+        // Load connection enabled states
         tasksEnabled = settingsStore.tasksEnabled.first()
-        tasksUrl = settingsStore.tasksUrl.first()
-
-        // Load streak settings
         streakEnabled = settingsStore.streakEnabled.first()
-        streakUrl = settingsStore.streakUrl.first()
-
-        // Load assistant settings
         assistantEnabled = settingsStore.assistantEnabled.first()
-        assistantUrl = settingsStore.assistantUrl.first()
-
-        gatewayUrl = settingsStore.gatewayUrl.first()
 
         // Load assistant settings
         assistantStopMode = settingsStore.assistantStopMode.first()
@@ -845,22 +838,18 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     }
                 )
                 2 -> ConnectionsTab(
-                    serverUrl = serverUrl,
                     tasksEnabled = tasksEnabled,
-                    tasksUrl = tasksUrl,
                     isTasksOnline = isTasksOnline,
                     streakEnabled = streakEnabled,
-                    streakUrl = streakUrl,
                     isStreakOnline = isStreakOnline,
                     assistantEnabled = assistantEnabled,
-                    assistantUrl = assistantUrl,
                     isAssistantOnline = isAssistantOnline,
                     userIdentity = userIdentity,
                     isLoadingIdentity = isLoadingIdentity,
                     onRefreshIdentity = {
                         scope.launch {
                             isLoadingIdentity = true
-                            userIdentity = PimaxAuthApi(authUrlFromTasksUrl(tasksUrl)).whoami()
+                            userIdentity = PimaxAuthApi(deriveServiceUrl(serverUrl, 8100)).whoami()
                             isLoadingIdentity = false
                         }
                     },
@@ -875,7 +864,6 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                             }
                         }
                     },
-                    onTasksUrlChange = { tasksUrl = it },
                     onTestTasksConnection = {
                         scope.launch {
                             isTasksOnline = null
@@ -894,7 +882,6 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                             }
                         }
                     },
-                    onStreakUrlChange = { streakUrl = it },
                     onTestStreakConnection = {
                         scope.launch {
                             isStreakOnline = null
@@ -920,7 +907,6 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                             }
                         }
                     },
-                    onAssistantUrlChange = { assistantUrl = it },
                     onTestAssistantConnection = {
                         scope.launch {
                             isAssistantOnline = null
@@ -934,7 +920,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                             isRefreshingConnections = true
                             // Also refresh identity on pull-to-refresh
                             isLoadingIdentity = true
-                            userIdentity = PimaxAuthApi(authUrlFromTasksUrl(tasksUrl)).whoami()
+                            userIdentity = PimaxAuthApi(deriveServiceUrl(serverUrl, 8100)).whoami()
                             isLoadingIdentity = false
                             if (tasksEnabled) {
                                 isTasksOnline = null
@@ -954,11 +940,8 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     onSave = {
                         scope.launch {
                             settingsStore.updateTasksEnabled(tasksEnabled)
-                            settingsStore.updateTasksUrl(tasksUrl)
                             settingsStore.updateStreakEnabled(streakEnabled)
-                            settingsStore.updateStreakUrl(streakUrl)
                             settingsStore.updateAssistantEnabled(assistantEnabled)
-                            settingsStore.updateAssistantUrl(assistantUrl)
                             Toast.makeText(context, "Connections saved", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -1119,8 +1102,6 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     onLiveChunkingEnabledChange = { enabled ->
                         scope.launch { settingsStore.updateLiveChunkingEnabled(enabled) }
                     },
-                    gatewayUrl = gatewayUrl,
-                    onGatewayUrlChange = { gatewayUrl = it },
                     localServerEnabled = localServerEnabled,
                     localServerPort = localServerPort,
                     onLocalServerEnabledChange = { enabled ->
@@ -1147,7 +1128,6 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                             settingsStore.updateLiveChunkingEnabled(liveChunkingEnabled)
                             settingsStore.updateLocalServerEnabled(localServerEnabled)
                             settingsStore.updateLocalServerPort(localServerPort)
-                            settingsStore.updateGatewayUrl(gatewayUrl)
                             settingsStore.updateSoundEnabled(soundEnabled)
                             settingsStore.updateVibrationEnabled(vibrationEnabled)
                             settingsStore.updateVibrationIntensity(vibrationIntensity)
@@ -2763,27 +2743,20 @@ fun HistoryCard(entry: HistoryEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
 
 @Composable
 fun ConnectionsTab(
-    serverUrl: String,
     tasksEnabled: Boolean,
-    tasksUrl: String,
     isTasksOnline: Boolean?,
     streakEnabled: Boolean,
-    streakUrl: String,
     isStreakOnline: Boolean?,
     assistantEnabled: Boolean,
-    assistantUrl: String,
     isAssistantOnline: Boolean?,
     userIdentity: PimaxAuthApi.WhoAmIResult?,
     isLoadingIdentity: Boolean,
     onRefreshIdentity: () -> Unit,
     onTasksEnabledChange: (Boolean) -> Unit,
-    onTasksUrlChange: (String) -> Unit,
     onTestTasksConnection: () -> Unit,
     onStreakEnabledChange: (Boolean) -> Unit,
-    onStreakUrlChange: (String) -> Unit,
     onTestStreakConnection: () -> Unit,
     onAssistantEnabledChange: (Boolean) -> Unit,
-    onAssistantUrlChange: (String) -> Unit,
     onTestAssistantConnection: () -> Unit,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
@@ -3004,13 +2977,6 @@ fun ConnectionsTab(
                 AnimatedVisibility(visible = tasksEnabled) {
                     Column {
                         Spacer(Modifier.height(12.dp))
-                        StyledTextField(
-                            value = tasksUrl,
-                            onValueChange = onTasksUrlChange,
-                            placeholder = deriveServiceUrl(serverUrl, 8058).ifEmpty { "http://<server-ip>:8058" },
-                            keyboardType = KeyboardType.Uri
-                        )
-                        Spacer(Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -3096,13 +3062,6 @@ fun ConnectionsTab(
                 AnimatedVisibility(visible = streakEnabled) {
                     Column {
                         Spacer(Modifier.height(12.dp))
-                        StyledTextField(
-                            value = streakUrl,
-                            onValueChange = onStreakUrlChange,
-                            placeholder = deriveServiceUrl(serverUrl, 8055).ifEmpty { "http://<server-ip>:8055" },
-                            keyboardType = KeyboardType.Uri
-                        )
-                        Spacer(Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -3193,13 +3152,6 @@ fun ConnectionsTab(
                 AnimatedVisibility(visible = assistantEnabled) {
                     Column {
                         Spacer(Modifier.height(12.dp))
-                        StyledTextField(
-                            value = assistantUrl,
-                            onValueChange = onAssistantUrlChange,
-                            placeholder = deriveServiceUrl(serverUrl, 8073).ifEmpty { "http://<server-ip>:8073" },
-                            keyboardType = KeyboardType.Uri
-                        )
-                        Spacer(Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -3342,8 +3294,6 @@ fun SettingsTab(
     onHallucinationThresholdChange: (Float) -> Unit,
     onToastTemplateChange: (String) -> Unit,
     onLiveChunkingEnabledChange: (Boolean) -> Unit,
-    gatewayUrl: String,
-    onGatewayUrlChange: (String) -> Unit,
     localServerEnabled: Boolean,
     localServerPort: Int,
     onLocalServerEnabledChange: (Boolean) -> Unit,
@@ -3703,16 +3653,16 @@ fun SettingsTab(
 
         Spacer(Modifier.height(14.dp))
 
-        // Server URL
+        // PI Server URL (GPU Server and LLM Gateway both derive from this)
         AnimatedVisibility(
-            visible = isVisible && inferenceMode == "GPU_SERVER",
+            visible = isVisible && (inferenceMode == "GPU_SERVER" || inferenceMode == "LLM_GATEWAY"),
             enter = fadeIn(tween(400, delayMillis = 80)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "WHISPER SERVER") {
+            SettingsCard(title = "PI SERVER") {
                 StyledTextField(
                     value = serverUrl,
                     onValueChange = onServerUrlChange,
-                    placeholder = "http://100.91.130.67:7862",
+                    placeholder = "http://your-pi-ip:7860",
                     keyboardType = KeyboardType.Uri
                 )
                 Spacer(Modifier.height(10.dp))
@@ -3721,39 +3671,31 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ServerStatusChip(isServerOnline)
-                    SmallActionButton(text = "TEST", color = Amber, onClick = onTestConnection)
+                    if (inferenceMode == "LLM_GATEWAY") {
+                        ServerStatusChip(isGatewayOnline)
+                        SmallActionButton(text = "TEST", color = Amber, onClick = onTestGatewayConnection)
+                    } else {
+                        ServerStatusChip(isServerOnline)
+                        SmallActionButton(text = "TEST", color = Amber, onClick = onTestConnection)
+                    }
                 }
-            }
-        }
-
-        // LLM Gateway URL
-        AnimatedVisibility(
-            visible = isVisible && inferenceMode == "LLM_GATEWAY",
-            enter = fadeIn(tween(400, delayMillis = 80)) + slideInVertically(initialOffsetY = { 20 })
-        ) {
-            SettingsCard(title = "LLM GATEWAY") {
-                StyledTextField(
-                    value = gatewayUrl,
-                    onValueChange = onGatewayUrlChange,
-                    placeholder = deriveServiceUrl(serverUrl, 8068).ifEmpty { "http://<server-ip>:8068" },
-                    keyboardType = KeyboardType.Uri
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ServerStatusChip(isGatewayOnline)
-                    SmallActionButton(text = "TEST", color = Amber, onClick = onTestGatewayConnection)
+                if (inferenceMode == "LLM_GATEWAY") {
+                    val derivedGateway = deriveServiceUrl(serverUrl, 8068)
+                    if (derivedGateway.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Gateway: $derivedGateway",
+                            fontSize = 10.sp,
+                            color = Emerald.copy(alpha = 0.8f),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            "Ultra-fast relay via Groq Whisper-Large-V3-Turbo",
+                            fontSize = 10.sp,
+                            color = Emerald.copy(alpha = 0.6f)
+                        )
+                    }
                 }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "Ultra-fast relay via Groq Whisper-Large-V3-Turbo",
-                    fontSize = 10.sp,
-                    color = Emerald.copy(alpha = 0.8f)
-                )
             }
         }
 
