@@ -1,5 +1,16 @@
 <resources>
-    <string name="app_name">WhisperFlow</string>
+    <string name="app_name">WhisperFlow X</string>
+    <string name="memory_watch_title">Записи с часов</string>
+    <string name="memory_watch_source">ЧАСЫ</string>
+    <string name="memory_processing">Расшифровывается</string>
+    <string name="memory_done">Готово</string>
+    <string name="memory_failed">Ошибка транскрипции</string>
+    <string name="memory_pending">Ожидает транскрипции</string>
+    <string name="memory_retry">Повторить</string>
+    <string name="memory_channel">Транскрипция</string>
+    <string name="memory_model_required">Аудио сохранено. Загрузите модель Whisper в настройках телефона и нажмите «Повторить».</string>
+    <string name="memory_empty_result">Речь не распознана. Аудио сохранено.</string>
+    <string name="memory_transcription_failed">Не удалось расшифровать запись. Аудио сохранено.</string>
     <string
         name="accessibility_description"
     >Enables Volume PTT and voice keyboard app actions for WhisperFlow.</string>

@@ -28,10 +28,29 @@ jobs:
           cache: gradle
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+      - name: Keep development signing identity stable across builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: VoiceMemory-development-signing-v1
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest --no-daemon
       - name: Build phone and watch from the same commit
         run: ./gradlew :app:assembleDebug :wear:assembleDebug --no-daemon
+      - name: Verify package identity, signatures and watch launcher
+        run: bash tools/verify-apk-pair.sh
+      - name: Upload tests and rendered watch screen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceMemory-verification
+          path: |
+            app/build/reports/tests/
+            wear/build/reports/tests/
+            wear/build/reports/watch-launch.png
+            wear/build/outputs/apk/debug/wear-manifest.xml
+            app/build/outputs/apk/debug/build-identity.txt
+          retention-days: 14
       - name: Upload phone APK
         uses: actions/upload-artifact@v4
         with:

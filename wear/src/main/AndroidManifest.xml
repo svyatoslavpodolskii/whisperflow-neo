@@ -28,7 +28,7 @@
 
         <!-- Main watch activity -->
         <activity
-            android:name=".WearMainActivity"
+            android:name="com.pimax.whisperflow.wear.WearMainActivity"
             android:exported="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault"
@@ -47,9 +47,8 @@
 
         <!-- Receive messages/data from phone -->
         <service
-            android:name=".WatchMessageReceiver"
+            android:name="com.pimax.whisperflow.wear.WatchMessageReceiver"
             android:exported="true"
-            android:permission="com.google.android.gms.permission.BIND_NETWORK_TASK_SERVICE"
         >
             <intent-filter>
                 <action
@@ -60,6 +59,10 @@
                     android:host="*"
                     android:pathPrefix="/whisper"
                 />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/voice-memory/v1/ack/" />
             </intent-filter>
         </service>
 

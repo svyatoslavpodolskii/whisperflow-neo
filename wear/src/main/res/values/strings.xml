@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-  <string name="app_name">WhisperFlow</string>
+  <string name="app_name">WhisperFlow X</string>
+  <string name="pending_count">Ожидают отправки: %1$d</string>
   <string name="tap_to_record">Запись</string>
   <string name="stop">Стоп</string>
   <string name="retry">Повторить</string>

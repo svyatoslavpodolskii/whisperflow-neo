@@ -4,6 +4,10 @@ import android.content.Intent
 import android.util.Log
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
+import com.google.android.gms.wearable.DataEvent
+import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.Node
+import com.pimax.whisperflow.sync.CaptureProtocol
 
 private const val TAG = "📨 WatchMsgReceiver"
 
@@ -19,6 +23,13 @@ private const val TAG = "📨 WatchMsgReceiver"
  * is logged and a notification could be shown (future enhancement).
  */
 class WatchMessageReceiver : WearableListenerService() {
+    override fun onDataChanged(events: DataEventBuffer) {
+        if (events.any { it.type == DataEvent.TYPE_CHANGED && it.dataItem.uri.path?.startsWith(CaptureProtocol.ACK_PREFIX) == true }) {
+            CaptureSyncWorker.enqueue(applicationContext)
+        }
+    }
+
+    override fun onPeerConnected(peer: Node) { CaptureSyncWorker.enqueue(applicationContext) }
 
     companion object {
         const val ACTION_WHISPER_MESSAGE = "com.pimax.whisperflow.wear.WHISPER_MESSAGE"

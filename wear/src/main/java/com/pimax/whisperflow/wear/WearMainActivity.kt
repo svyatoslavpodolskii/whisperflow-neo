@@ -125,6 +125,7 @@ class WearMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         recorder = WearAudioRecorder(this)
+        CaptureSyncWorker.enqueue(applicationContext)
 
         setContent {
             WearWhisperApp(recorder)
@@ -158,6 +159,7 @@ fun WearWhisperApp(
     var hasMicPermission by remember { mutableStateOf(false) }
 
     val amplitudeHistory = remember { mutableStateListOf<Float>() }
+    val pending by remember { PendingRecordingStore(context.applicationContext).entries }.collectAsState(initial = emptyList())
 
     DisposableEffect(watchState) {
         val window = (context as? ComponentActivity)?.window
@@ -361,6 +363,13 @@ fun WearWhisperApp(
 
 
                     Spacer(Modifier.height(6.dp))
+                    if (watchState == WatchState.IDLE && pending.isNotEmpty()) {
+                        Text(
+                            stringResource(R.string.pending_count, pending.size),
+                            color = AmberLight, fontSize = 10.sp, textAlign = TextAlign.Center,
+                            modifier = Modifier.clickable { CaptureSyncWorker.enqueue(context.applicationContext) }.padding(6.dp)
+                        )
+                    }
                 }
             }
         }
@@ -636,7 +645,10 @@ private suspend fun finishRecording(
             return
         }
         // Phase 1: persist first. Legacy transcription is not a durable delivery ACK.
-        withContext(Dispatchers.IO) { PendingRecordingStore(context).save(wavBytes) }
+        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+            PendingRecordingStore(context).save(wavBytes, recorder.recordingId)
+            CaptureSyncWorker.enqueue(context.applicationContext)
+        }
         recorder.confirmSaved()
         onStateChange(WatchState.RESULT, context.getString(R.string.saved), null)
         vibrateSuccess(context)

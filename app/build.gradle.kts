@@ -13,8 +13,8 @@ android {
         applicationId = "com.pimax.whisperflow"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1-sync"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -50,6 +50,8 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets.getByName("main").java.srcDir("../shared/src/main/kotlin")
+    testOptions.unitTests.isIncludeAndroidResources = true
 
     applicationVariants.all {
         val variant = this
@@ -70,6 +72,9 @@ android {
 }
 
 dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
     // Core Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

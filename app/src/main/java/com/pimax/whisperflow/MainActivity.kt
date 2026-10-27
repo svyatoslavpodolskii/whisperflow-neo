@@ -140,13 +140,7 @@ class MainActivity : ComponentActivity() {
         SoundFeedback.initialize(this)
         enableEdgeToEdge()
 
-        // Start WatchRelayService to listen for watch audio
-        try {
-            startService(Intent(this, WatchRelayService::class.java))
-            Log.d(TAG, "Started WatchRelayService")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to start WatchRelayService: ${e.message}")
-        }
+        WatchInboxWorker.enqueue(applicationContext)
         setContent {
             WhisperFlowTheme {
                 MainScreen(audioRecorder!!)
@@ -2412,6 +2406,9 @@ fun HistoryTab(
     onCopy: (String) -> Unit,
     onDelete: (Long) -> Unit
 ) {
+    val inboxContext = LocalContext.current
+    val inboxRepository = remember { AudioInboxRepository.get(inboxContext) }
+    val inboxRows by inboxRepository.recordings.collectAsState(initial = emptyList())
     val entries = remember(historyJson) {
         try {
             val array = JSONArray(historyJson)
@@ -2481,7 +2478,9 @@ fun HistoryTab(
 
         Spacer(Modifier.height(16.dp))
 
-        if (entries.isEmpty()) {
+        WatchInboxSection(inboxRows, onCopy)
+
+        if (entries.isEmpty() && inboxRows.isEmpty()) {
             AnimatedVisibility(
                 visible = isVisible,
                 enter = fadeIn(tween(400, delayMillis = 150))
@@ -2585,6 +2584,7 @@ fun HistoryCard(entry: HistoryEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
                     val isLocal = entry.mode!!.startsWith("LOCAL")
                     val isGateway = entry.mode!!.startsWith("GATEWAY") || entry.mode == "LLM_GATEWAY"
                     val modeLabel = when {
+                        entry.mode == "WATCH" -> androidx.compose.ui.res.stringResource(R.string.memory_watch_source)
                         isLocal -> entry.mode!!.removePrefix("LOCAL:").uppercase()
                         isGateway -> {
                             val model = entry.mode!!.removePrefix("GATEWAY:").uppercase()

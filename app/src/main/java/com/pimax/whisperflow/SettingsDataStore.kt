@@ -71,7 +71,7 @@ class SettingsDataStore(private val context: Context) {
         const val DEFAULT_SERVER_URL = ""
         const val DEFAULT_LANGUAGE = "Auto"
         const val DEFAULT_TASK = "transcribe"
-        const val DEFAULT_INFERENCE_MODE = "GPU_SERVER"
+        const val DEFAULT_INFERENCE_MODE = "LOCAL"
         const val DEFAULT_LOCAL_MODEL = "TINY"
         const val DEFAULT_TASKS_URL = ""
         const val DEFAULT_STREAK_URL = ""

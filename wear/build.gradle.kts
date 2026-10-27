@@ -9,11 +9,12 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.pimax.whisperflow.wear"
+        // Data Layer requires the same applicationId and signing certificate as the phone.
+        applicationId = "com.pimax.whisperflow"
         minSdk = 30 // Wear OS 3.0+
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1-sync"
     }
 
     signingConfigs {
@@ -46,6 +47,8 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets.getByName("main").java.srcDir("../shared/src/main/kotlin")
+    testOptions.unitTests.isIncludeAndroidResources = true
 
     applicationVariants.all {
         val variant = this
@@ -58,6 +61,12 @@ android {
 }
 
 dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
     // Core Android
     implementation(libs.androidx.core.ktx)

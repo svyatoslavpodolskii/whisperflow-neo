@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Microphone for audio recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -16,6 +16,7 @@
 
     <!-- Foreground service for long recordings -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Required for the digital assistant overlay (long-press power / volume PTT) to draw on top of other apps on Samsung and some OEMs -->
@@ -169,15 +170,24 @@
                 <action
                     android:name="com.google.android.gms.wearable.DATA_CHANGED"
                 />
-                <data android:scheme="wear" android:pathPrefix="/whisper" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/whisper" />
             </intent-filter>
             <intent-filter>
                 <action
                     android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED"
                 />
-                <data android:scheme="wear" android:pathPrefix="/whisper" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/whisper" />
             </intent-filter>
         </service>
+
+        <service android:name=".VoiceMemoryReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/voice-memory/v1/audio/" />
+            </intent-filter>
+        </service>
+        <service android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync" tools:node="merge" />
 
         <!-- Declare capability so the watch can discover this phone node -->
         <meta-data
