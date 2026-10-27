@@ -50,7 +50,13 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest --no-daemon
       - name: Build phone and watch from the same commit
         run: ./gradlew :app:assembleDebug :wear:assembleDebug --no-daemon
-      - name: Verify package identity, signatures and watch launcher
+      - name: Verify common phone and watch application ID
+        run: bash tools/verify-apk-pair.sh identity
+      - name: Verify matching phone and watch signing certificates
+        run: bash tools/verify-apk-pair.sh signing
+      - name: Verify direct watch recorder launcher
+        run: bash tools/verify-apk-pair.sh launcher
+      - name: Record APK build identity
         run: bash tools/verify-apk-pair.sh
       - name: Upload tests and rendered watch screen
         if: always()
