@@ -53,46 +53,46 @@ class PendingRecordingStore(context: Context) {
             val id = raw.nameWithoutExtension
             if (CaptureProtocol.validId(id) && !WearAudioRecorder.isSpoolActive(id)) {
                 try {
-                if (raw.length() == 0L) raw.delete()
-                else {
-                    val metadata = File(directory, "$id.json")
-                    if (!metadata.exists()) {
-                        val bytes = raw.readBytes()
-                        // A torn final sample is unusable; preserve all complete PCM16 samples.
-                        save(WearWav.encode(bytes.copyOf(bytes.size - bytes.size % 2)), id)
+                    if (raw.length() == 0L) raw.delete()
+                    else {
+                        val metadata = File(directory, "$id.json")
+                        if (!metadata.exists()) {
+                            val bytes = raw.readBytes()
+                            // A torn final sample is unusable; preserve all complete PCM16 samples.
+                            save(WearWav.encode(bytes.copyOf(bytes.size - bytes.size % 2)), id)
+                        }
+                        // Keep the journal until both WAV and metadata are durable.
+                        raw.delete()
                     }
-                    // Keep the journal until both WAV and metadata are durable.
-                    raw.delete()
-                }
                 } catch (error: Exception) { android.util.Log.e("CaptureOutbox", "Cannot recover $id; raw audio retained", error) }
             }
         }
         directory.listFiles { f -> f.extension == "wav" }?.mapNotNull { audio ->
             try {
-            val id = audio.nameWithoutExtension
-            if (!CaptureProtocol.validId(id)) return@mapNotNull null
-            val meta = File(directory, "$id.json")
-            if (!meta.exists() || runCatching { JSONObject(meta.readText()) }.isFailure) {
-                val bytes = audio.readBytes()
-                val duration = CaptureProtocol.validateWav(bytes)
-                atomicWrite(meta, JSONObject().apply {
-                    put("id", id); put("createdAt", audio.lastModified()); put("durationMs", duration)
-                    put("localPath", audio.absolutePath); put("fileSize", audio.length())
-                    put("sha256", CaptureProtocol.sha256(bytes)); put("syncState", "LOCAL")
-                    put("retryCount", 0); put("lastAttemptAt", JSONObject.NULL)
-                }.toString().toByteArray(Charsets.UTF_8))
-            }
-            val data = JSONObject(meta.readText())
-            if (data.optString("syncState") == "DELIVERED") {
-                if (audio.delete()) meta.delete()
-                return@mapNotNull null
-            }
-            // Earlier Phase 1 metadata did not have a checksum.
-            if (!data.has("sha256")) {
-                data.put("sha256", CaptureProtocol.sha256(audio.readBytes()))
-                atomicWrite(meta, data.toString().toByteArray(Charsets.UTF_8))
-            }
-            Entry(id, audio, data.getLong("createdAt"), data.getLong("durationMs"), data.getString("sha256"))
+                val id = audio.nameWithoutExtension
+                if (!CaptureProtocol.validId(id)) return@mapNotNull null
+                val meta = File(directory, "$id.json")
+                if (!meta.exists() || runCatching { JSONObject(meta.readText()) }.isFailure) {
+                    val bytes = audio.readBytes()
+                    val duration = CaptureProtocol.validateWav(bytes)
+                    atomicWrite(meta, JSONObject().apply {
+                        put("id", id); put("createdAt", audio.lastModified()); put("durationMs", duration)
+                        put("localPath", audio.absolutePath); put("fileSize", audio.length())
+                        put("sha256", CaptureProtocol.sha256(bytes)); put("syncState", "LOCAL")
+                        put("retryCount", 0); put("lastAttemptAt", JSONObject.NULL)
+                    }.toString().toByteArray(Charsets.UTF_8))
+                }
+                val data = JSONObject(meta.readText())
+                if (data.optString("syncState") == "DELIVERED") {
+                    if (audio.delete()) meta.delete()
+                    return@mapNotNull null
+                }
+                // Earlier Phase 1 metadata did not have a checksum.
+                if (!data.has("sha256")) {
+                    data.put("sha256", CaptureProtocol.sha256(audio.readBytes()))
+                    atomicWrite(meta, data.toString().toByteArray(Charsets.UTF_8))
+                }
+                Entry(id, audio, data.getLong("createdAt"), data.getLong("durationMs"), data.getString("sha256"))
             } catch (error: Exception) {
                 android.util.Log.e("CaptureOutbox", "Cannot queue ${audio.name}; audio retained", error)
                 null

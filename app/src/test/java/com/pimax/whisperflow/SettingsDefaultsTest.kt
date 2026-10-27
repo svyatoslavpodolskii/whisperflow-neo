@@ -45,8 +45,8 @@ class SettingsDefaultsTest {
     }
 
     @Test
-    fun `DEFAULT_INFERENCE_MODE is GPU_SERVER`() {
-        assertEquals("GPU_SERVER", SettingsDataStore.DEFAULT_INFERENCE_MODE)
+    fun `DEFAULT_INFERENCE_MODE is LOCAL`() {
+        assertEquals("LOCAL", SettingsDataStore.DEFAULT_INFERENCE_MODE)
     }
 
     @Test

@@ -59,7 +59,10 @@ class WatchTranscriptionWorker(context: Context, params: WorkerParameters) : Cor
                     }
                 }.filter { it.isNotEmpty() }.joinToString(" ")
             } else engine.transcribeWav(bytes, language).text.trim()
-            check(text.isNotBlank()) { applicationContext.getString(R.string.memory_empty_result) }
+            if (text.isBlank()) {
+                repository.update(id, "FAILED", error = applicationContext.getString(R.string.memory_empty_result))
+                return Result.success()
+            }
             repository.update(id, "DONE", text)
             return Result.success()
         } catch (cancelled: CancellationException) {
@@ -78,7 +81,7 @@ class WatchTranscriptionWorker(context: Context, params: WorkerParameters) : Cor
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(applicationContext.getString(R.string.memory_processing))
             .setContentIntent(intent).setOngoing(true).setSilent(true).build()
-        return ForegroundInfo(id.hashCode() and Int.MAX_VALUE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        return ForegroundInfo((id.hashCode() and Int.MAX_VALUE).coerceAtLeast(1), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     companion object {

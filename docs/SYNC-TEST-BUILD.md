@@ -73,6 +73,12 @@ launcher, а build-identity.txt содержит commit и SHA-256 файлов.
 
 ## Границы доказательства
 
+Локальная проверка 27 октября 2026: `:app:testDebugUnitTest :wear:testDebugUnitTest
+:app:assembleDebug :wear:assembleDebug` — успешно. Phone: 30 tests, Wear: 6 tests,
+без ошибок. Подписи пары APK сверены. PNG стартового экрана получен native Canvas-отрисовкой
+реального measured DecorView в Robolectric и визуально проверен; проверка нажатия и видимости
+использует Compose semantics, а не подменённый макет.
+
 Unit/Robolectric tests и сборка не заменяют физическую пару Galaxy Watch 6 + Phone.
 Проверка работы GMS между разными сетями, реального микрофона, вибрации, OEM permission UI
 и расхода батареи остаётся device test. Принудительная остановка приложения через Android

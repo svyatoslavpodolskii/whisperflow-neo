@@ -357,7 +357,7 @@ fun WearWhisperApp(
                             ErrorCard(text = errorText)
                         }
                         WatchState.IDLE -> {
-                            Text(stringResource(R.string.tap_to_record), color = TextMuted, fontSize = 12.sp)
+                            Text(stringResource(R.string.tap_to_record), color = TextWhite, fontSize = 12.sp)
                         }
                     }
 
@@ -400,7 +400,7 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
     val buttonColor = when {
         isRecording -> Amber
         isBusy -> AmberDim.copy(alpha = 0.5f)
-        else -> AmberDim
+        else -> Amber
     }
 
     Box(contentAlignment = Alignment.Center) {
@@ -434,7 +434,7 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
                     else -> R.string.tap_to_record
                 }),
                 modifier = Modifier.size(26.dp),
-                tint = if (isRecording) DeepNoir else TextWhite
+                tint = if (isBusy) TextGray else DeepNoir
             )
         }
     }
@@ -647,7 +647,7 @@ private suspend fun finishRecording(
         // Phase 1: persist first. Legacy transcription is not a durable delivery ACK.
         withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
             PendingRecordingStore(context).save(wavBytes, recorder.recordingId)
-            CaptureSyncWorker.enqueue(context.applicationContext)
+            CaptureSyncWorker.enqueue(context.applicationContext).result.get()
         }
         recorder.confirmSaved()
         onStateChange(WatchState.RESULT, context.getString(R.string.saved), null)
