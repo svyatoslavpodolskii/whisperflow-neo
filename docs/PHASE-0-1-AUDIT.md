@@ -1,7 +1,7 @@
 # WhisperFlow → Voice Memory: аудит и первый этап
 
 Аудит исходного commit `28f3db5a9b193587ea537b96cb9f392e0ab0f001`.
-Дата: 27 октября 2026. Изменения Phase 1 ещё требуют Android-сборки и проверки на Galaxy Watch 6 40 mm.
+Дата: 27 октября 2026. Android-сборки и unit tests прошли в CI; проверка на Galaxy Watch 6 40 mm ещё требуется.
 
 ## 1. Phone — FACT
 
@@ -120,7 +120,9 @@ PCM-буфер удерживается до повторного нажатия
   ещё не внедрён; release pipeline расширяется после стабилизации.
 - [Upstream releases](https://github.com/pimax-apps/pimax-whisperflow/releases): несколько тегов
   указывают на один commit 28f3db5; название release не определяет содержимое Wear APK.
-- свежий успешный запуск Actions для изменённой ветки ещё не подтверждён.
+- [Actions run 40506486886](https://github.com/svyatoslavpodolskii/pimax-whisperflow/actions/runs/40506486886)
+  для commit `6e8ed9f578efe1d416da562e239684a958d2b538` завершился успешно: unit tests обоих модулей,
+  обе debug сборки и публикация всех трёх artifacts. Оба APK относятся к одному commit.
 
 ## 11. Проверка / следующий шаг
 
@@ -132,8 +134,8 @@ RIFF/WAVE, длины chunks, sample rate, byte rate, channels, bits, block alig
 
 Локальный запуск завершился до компиляции: `SDK location not found`.
 Android SDK не обнаружен в стандартных путях и не задан через ANDROID_HOME/local.properties.
-Android unit tests и сборка APK локально не подтверждены. Отдельный JVM smoke test выше выполнен;
-JUnit tests добавлены для запуска в CI, но локально не запускались успешно.
+Android unit tests и сборка APK локально не подтверждены. Отдельный JVM smoke test выше выполнен.
+JUnit tests и сборки APK успешно выполнены в GitHub Actions (ссылка выше).
 
 ```powershell
 .\gradlew.bat :app:assembleDebug :wear:assembleDebug :app:testDebugUnitTest :wear:testDebugUnitTest
