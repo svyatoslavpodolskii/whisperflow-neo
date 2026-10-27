@@ -37,6 +37,15 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: VoiceMemory-development-signing-v1
+      - name: Create one shared development key before parallel builds
+        shell: bash
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest --no-daemon
       - name: Build phone and watch from the same commit
@@ -52,7 +61,7 @@ jobs:
             app/build/reports/tests/
             wear/build/reports/tests/
             wear/build/reports/watch-launch.png
-            wear/build/outputs/apk/debug/wear-manifest.xml
+            wear/build/outputs/apk/debug/wear-manifest.txt
             app/build/outputs/apk/debug/build-identity.txt
           retention-days: 14
       - name: Upload phone APK
