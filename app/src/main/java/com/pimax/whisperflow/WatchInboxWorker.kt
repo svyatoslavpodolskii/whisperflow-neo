@@ -52,6 +52,8 @@ class WatchInboxWorker(context: Context, params: WorkerParameters) : CoroutineWo
                             dataMap.putString("watchNode", node)
                         }.asPutDataRequest().setUrgent()
                         client.putDataItem(ack).await()
+                        runCatching { NoteVaultSyncWorker.enqueue(applicationContext) }
+                            .onFailure { Log.w("WatchInbox", "Markdown indexing deferred until next launch", it) }
                     } catch (cancelled: CancellationException) { throw cancelled
                     } catch (error: Exception) {
                         Log.e("WatchInbox", "Audio was not acknowledged: ${item.uri}", error)

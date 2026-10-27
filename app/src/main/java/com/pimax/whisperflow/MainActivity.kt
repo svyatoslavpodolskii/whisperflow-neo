@@ -1,6 +1,7 @@
 package com.pimax.whisperflow
 
 import android.content.Intent
+import com.pimax.whisperflow.sync.uiText
 import android.Manifest
 import com.pimax.whisperflow.local.ModelManager
 import com.pimax.whisperflow.local.TranscriptionEngine
@@ -132,6 +133,7 @@ private const val CHUNK_INITIAL_DELAY_MS = 1500L
 // ═══════════════════════════════════════════════════════════════
 
 class MainActivity : ComponentActivity() {
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(com.pimax.whisperflow.sync.UiLanguage.wrap(base))
     private var audioRecorder: AudioRecorder? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -154,6 +156,11 @@ class MainActivity : ComponentActivity() {
                 MainScreen(audioRecorder!!)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WATCH)) NoteVaultSyncWorker.enqueue(applicationContext)
     }
 
     override fun onDestroy() {
@@ -193,7 +200,12 @@ fun WhisperFlowTheme(content: @Composable () -> Unit) {
 @Composable
 fun MainScreen(audioRecorder: AudioRecorder) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("RECORD", "HISTORY", "CONNECT", "SETTINGS")
+    val tabs = listOf(androidx.compose.ui.res.stringResource(R.string.nav_record),
+        androidx.compose.ui.res.stringResource(R.string.notes_title), androidx.compose.ui.res.stringResource(R.string.nav_settings))
+    val mainRoutes = listOf(0, 1, 3)
+    androidx.activity.compose.BackHandler(enabled = selectedTab == 2 || selectedTab == 4) {
+        selectedTab = if (selectedTab == 2) 3 else 1
+    }
     val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
@@ -312,13 +324,13 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                         historyJson = settingsStore.history.first()
                         SoundFeedback.playSuccess()
                     } else {
-                        transcriptionError = result.error ?: "Transcription failed"
+                        transcriptionError = result.error ?: uiText(R.string.ui_transcription_failed)
                         SoundFeedback.playError()
                     }
                     file.delete()
                 } else {
                     isTranscribing = false
-                    transcriptionError = "Could not read the selected file"
+                    transcriptionError = uiText(R.string.ui_could_not_read_the_selected_file)
                 }
             }
         }
@@ -326,7 +338,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
 
     // Refresh history when History tab is selected
     LaunchedEffect(selectedTab) {
-        if (selectedTab == 1) {
+        if (selectedTab == 4) {
             historyJson = settingsStore.history.first()
         }
     }
@@ -576,10 +588,10 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     Log.d(TAG, "Ready to record check: inferenceMode=$inferenceMode, isServerOnline=$isServerOnline, engineState=$engineState")
                     if (inferenceMode == "GPU_SERVER" && isServerOnline == false) {
                         Log.w(TAG, "Blocked: GPU server offline")
-                        Toast.makeText(context, "⚠ GPU server offline — cannot record", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, uiText(R.string.ui_gpu_server_offline_cannot_record), Toast.LENGTH_SHORT).show()
                     } else if (inferenceMode == "LOCAL" && engineState !is TranscriptionEngine.EngineState.Ready) {
                         Log.w(TAG, "Blocked: Local engine not ready. State: $engineState")
-                        Toast.makeText(context, "⚠ Local model not ready — download a model first", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, uiText(R.string.ui_local_model_not_ready_download_a_model_first), Toast.LENGTH_SHORT).show()
                     } else {
                         Log.d(TAG, "Starting recording in $inferenceMode mode")
                         transcriptionError = null
@@ -639,7 +651,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                 if (assistantEnabled && finalText.isNotBlank()) {
                                     val assistantApi = WhisperHookApi(assistantUrl, "Assistant")
                                     val hookResult = assistantApi.send(finalText)
-                                    assistantMessage = hookResult.message.ifBlank { "⚠️ Assistant unreachable" }
+                                    assistantMessage = hookResult.message.ifBlank { uiText(R.string.ui_assistant_unreachable) }
                                 }
 
                                 // Send to Streak Tracker if enabled (skip when Assistant is ON)
@@ -667,7 +679,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                 Log.d(TAG, "Transcription complete (${result.mode}): ${result.text.take(50)}...")
                             } catch (e: Exception) {
                                 isTranscribing = false
-                                transcriptionError = e.message ?: "Transcription failed"
+                                transcriptionError = e.message ?: uiText(R.string.ui_transcription_failed)
                                 Log.e(TAG, "Transcription error: ${e.message}")
                                 SoundFeedback.playError()
                             }
@@ -713,7 +725,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                     if (assistantEnabled && finalText.isNotBlank()) {
                                         val assistantApi = WhisperHookApi(assistantUrl, "Assistant")
                                         val hookResult = assistantApi.send(finalText)
-                                        assistantMessage = hookResult.message.ifBlank { "⚠️ Assistant unreachable" }
+                                        assistantMessage = hookResult.message.ifBlank { uiText(R.string.ui_assistant_unreachable) }
                                     }
 
                                     // Send to Streak Tracker if enabled (skip when Assistant is ON)
@@ -767,8 +779,8 @@ fun MainScreen(audioRecorder: AudioRecorder) {
         bottomBar = {
             BottomNavBar(
                 tabs = tabs,
-                selectedIndex = selectedTab,
-                onSelect = { selectedTab = it }
+                selectedIndex = if (selectedTab == 4) 1 else mainRoutes.indexOf(selectedTab).takeIf { it >= 0 } ?: 2,
+                onSelect = { selectedTab = mainRoutes[it] }
             )
         }
     ) { innerPadding ->
@@ -810,11 +822,12 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     onCopy = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Transcription", transcriptionText))
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, uiText(R.string.ui_copied), Toast.LENGTH_SHORT).show()
                     },
                     isServerRunning = isLocalServerRunning
                 )
-                1 -> HistoryTab(
+                1 -> NotesScreen(onOpenRecordings = { selectedTab = 4 })
+                4 -> HistoryTab(
                     historyJson = historyJson,
                     onRefresh = {
                         scope.launch {
@@ -830,7 +843,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     onCopy = { text ->
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Transcription", text))
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, uiText(R.string.ui_copied), Toast.LENGTH_SHORT).show()
                     },
                     onDelete = { timestamp ->
                         scope.launch {
@@ -944,11 +957,12 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                             settingsStore.updateTasksEnabled(tasksEnabled)
                             settingsStore.updateStreakEnabled(streakEnabled)
                             settingsStore.updateAssistantEnabled(assistantEnabled)
-                            Toast.makeText(context, "Connections saved", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, uiText(R.string.ui_connections_saved), Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
                 3 -> SettingsTab(
+                    onOpenConnections = { selectedTab = 2 },
                     serverUrl = serverUrl,
                     language = language,
                     task = task,
@@ -1153,7 +1167,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                 val api = WhisperApi(gatewayUrl)
                                 isGatewayOnline = api.checkHealth()
                             }
-                            Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, uiText(R.string.ui_settings_saved), Toast.LENGTH_SHORT).show()
                         }
                     },
                     onTestConnection = {
@@ -1430,16 +1444,16 @@ fun RecordTab(
         // Hint
         Text(
             when {
-                !hasPermission -> "TAP TO GRANT MIC PERMISSION"
+                !hasPermission -> uiText(R.string.ui_tap_to_grant_mic_permission)
                 isTranscribing -> when (inferenceMode) {
-                    "LOCAL" -> "PROCESSING LOCALLY..."
-                    "LLM_GATEWAY" -> "PROCESSING ON GATEWAY..."
-                    else -> "PROCESSING ON GPU..."
+                    "LOCAL" -> uiText(R.string.ui_processing_locally)
+                    "LLM_GATEWAY" -> uiText(R.string.ui_processing_on_gateway)
+                    else -> uiText(R.string.ui_processing_on_gpu)
                 }
-                isRecording && liveMode -> "LIVE — TAP TO STOP & FINALIZE"
-                isRecording -> "RECORDING — TAP TO STOP"
-                transcriptionText.isNotEmpty() -> "TAP TO RECORD AGAIN"
-                else -> "TAP TO RECORD"
+                isRecording && liveMode -> uiText(R.string.ui_live_tap_to_stop_finalize)
+                isRecording -> uiText(R.string.ui_recording_tap_to_stop)
+                transcriptionText.isNotEmpty() -> uiText(R.string.ui_tap_to_record_again)
+                else -> uiText(R.string.ui_tap_to_record)
             },
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
@@ -1468,7 +1482,7 @@ fun RecordTab(
             exit = fadeOut(tween(150))
         ) {
             SmallActionButton(
-                text = "📎  ATTACH AUDIO FILE",
+                text = uiText(R.string.ui_attach_audio_file),
                 color = WarmGray,
                 onClick = onAttachFile
             )
@@ -1937,7 +1951,7 @@ fun TranscriptionCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "TRANSCRIPTION",
+                    uiText(R.string.ui_transcription),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     color = WarmGray,
@@ -1988,9 +2002,9 @@ fun TranscriptionCard(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            SmallActionButton(text = "CLEAR", color = WarmGray, onClick = onClear)
+            SmallActionButton(text = uiText(R.string.ui_clear), color = WarmGray, onClick = onClear)
             Spacer(Modifier.width(10.dp))
-            SmallActionButton(text = "COPY", color = Amber, onClick = onCopy)
+            SmallActionButton(text = uiText(R.string.ui_copy), color = Amber, onClick = onCopy)
         }
     }
 }
@@ -2019,9 +2033,9 @@ fun TranscribingCard(inferenceMode: String = "GPU_SERVER") {
         else -> Amber
     }
     val text = when {
-        isLocal -> "Processing locally"
-        isGateway -> "Processing on Gateway"
-        else -> "Processing on GPU"
+        isLocal -> uiText(R.string.ui_processing_locallyx)
+        isGateway -> uiText(R.string.ui_processing_on_gatewayx)
+        else -> uiText(R.string.ui_processing_on_gpux)
     }
 
     Row(
@@ -2164,7 +2178,7 @@ fun GpuActivityMonitor(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (isInferenceActive) "INFERENCE ACTIVE" else if (isTranscribing) "PROCESSING..." else "ADRENO GPU",
+                    if (isInferenceActive) uiText(R.string.ui_inference_active) else if (isTranscribing) uiText(R.string.neo_processing) else "ADRENO GPU",
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isInferenceActive || isTranscribing) Emerald else WarmGray,
@@ -2256,9 +2270,9 @@ fun ServerStatusChip(isOnline: Boolean?) {
         label = "pulse"
     )
     val text = when (isOnline) {
-        true -> "GPU ONLINE"
-        false -> "GPU OFFLINE"
-        null -> "CHECKING..."
+        true -> uiText(R.string.ui_gpu_online)
+        false -> uiText(R.string.ui_gpu_offline)
+        null -> uiText(R.string.neo_checking)
     }
 
     Row(
@@ -2343,7 +2357,7 @@ fun InferenceModeChip(
             Text(
                 when {
                     isGateway -> "GATEWAY"
-                    isServerOnline == true -> "GPU SERVER"
+                    isServerOnline == true -> uiText(R.string.ui_gpu_server)
                     isServerOnline == false -> "GPU ✗"
                     else -> "GPU ⏳"
                 },
@@ -2463,22 +2477,22 @@ fun HistoryTab(
             ) {
                 Column {
                     Text(
-                        "HISTORY",
+                        uiText(R.string.ui_history),
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Black,
                         color = WarmWhite,
                         letterSpacing = 4.sp
                     )
                     Text(
-                        "${entries.size} transcriptions",
+                        uiText(R.string.ui_history_count, entries.size),
                         fontSize = 11.sp,
                         color = WarmGray
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SmallActionButton(text = "↻ REFRESH", color = Amber, onClick = onRefresh)
+                    SmallActionButton(text = uiText(R.string.ui_refresh), color = Amber, onClick = onRefresh)
                     if (entries.isNotEmpty()) {
-                        SmallActionButton(text = "CLEAR ALL", color = CoralRed, onClick = onClear)
+                        SmallActionButton(text = uiText(R.string.ui_clear_all), color = CoralRed, onClick = onClear)
                     }
                 }
             }
@@ -2502,8 +2516,8 @@ fun HistoryTab(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("🎤", fontSize = 36.sp)
                         Spacer(Modifier.height(10.dp))
-                        Text("No transcriptions yet", fontSize = 13.sp, color = WarmGray)
-                        Text("Record something to get started", fontSize = 11.sp, color = MutedGray)
+                        Text(uiText(R.string.ui_no_transcriptions_yet), fontSize = 13.sp, color = WarmGray)
+                        Text(uiText(R.string.ui_record_something_to_get_started), fontSize = 11.sp, color = MutedGray)
                     }
                 }
             }
@@ -2620,7 +2634,7 @@ fun HistoryCard(entry: HistoryEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
                 if (entry.sentToTasks) {
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "📋 TASK",
+                        uiText(R.string.ui_task),
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                         color = Copper,
@@ -2727,7 +2741,7 @@ fun HistoryCard(entry: HistoryEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (isPlaying) "Playing..." else "Play recording",
+                    if (isPlaying) "Playing..." else uiText(R.string.ui_play_recording),
                     fontSize = 10.sp,
                     color = if (isPlaying) CoralRed else WarmGray,
                     fontWeight = FontWeight.Medium
@@ -2809,14 +2823,14 @@ fun ConnectionsTab(
         ) {
             Column {
                 Text(
-                    "CONNECTIONS",
+                    uiText(R.string.ui_connections),
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Black,
                     color = WarmWhite,
                     letterSpacing = 4.sp
                 )
                 Text(
-                    "Send transcriptions to Pi services",
+                    uiText(R.string.ui_send_transcriptions_to_pi_services),
                     fontSize = 11.sp,
                     color = WarmGray
                 )
@@ -2830,7 +2844,7 @@ fun ConnectionsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 100)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "\uD83D\uDD10 IDENTITY") {
+            SettingsCard(title = uiText(R.string.neo_identity)) {
                 if (isLoadingIdentity) {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
@@ -2896,7 +2910,7 @@ fun ConnectionsTab(
                         IconButton(onClick = onRefreshIdentity, modifier = Modifier.size(36.dp)) {
                             Icon(
                                 Icons.Default.Refresh,
-                                contentDescription = "Refresh identity",
+                                contentDescription = uiText(R.string.ui_refresh_identity),
                                 tint = Amber.copy(alpha = 0.6f),
                                 modifier = Modifier.size(18.dp)
                             )
@@ -2910,13 +2924,13 @@ fun ConnectionsTab(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "Not recognized",
+                                uiText(R.string.ui_not_recognized),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = CoralRed
                             )
                             Text(
-                                userIdentity?.error ?: "Check Tailscale connection",
+                                userIdentity?.error ?: uiText(R.string.ui_check_tailscale_connection),
                                 fontSize = 10.sp,
                                 color = WarmGray
                             )
@@ -2941,7 +2955,7 @@ fun ConnectionsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 180))
         ) {
-            PrimaryButton(text = "SAVE CONNECTIONS", onClick = onSave)
+            PrimaryButton(text = uiText(R.string.ui_save_connections), onClick = onSave)
         }
 
         Spacer(Modifier.height(20.dp))
@@ -2951,7 +2965,7 @@ fun ConnectionsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 60)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "📋 TASKS") {
+            SettingsCard(title = uiText(R.string.ui_tasks)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2959,13 +2973,13 @@ fun ConnectionsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "PiMax Tasks",
+                            uiText(R.string.ui_pimax_tasks),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = WarmWhite
                         )
                         Text(
-                            "Auto-create tasks from transcriptions",
+                            uiText(R.string.ui_auto_create_tasks_from_transcriptions),
                             fontSize = 10.sp,
                             color = WarmGray
                         )
@@ -3006,9 +3020,9 @@ fun ConnectionsTab(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     when (isTasksOnline) {
-                                        true -> "CONNECTED"
-                                        false -> "OFFLINE"
-                                        null -> "CHECKING..."
+                                        true -> uiText(R.string.neo_connected)
+                                        false -> uiText(R.string.neo_offline)
+                                        null -> uiText(R.string.neo_checking)
                                     },
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
@@ -3020,7 +3034,7 @@ fun ConnectionsTab(
                                     letterSpacing = 1.sp
                                 )
                             }
-                            SmallActionButton(text = "TEST", color = Amber, onClick = onTestTasksConnection)
+                            SmallActionButton(text = uiText(R.string.ui_test), color = Amber, onClick = onTestTasksConnection)
                         }
                     }
                 }
@@ -3036,7 +3050,7 @@ fun ConnectionsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 120)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "🔥 STREAK TRACKER") {
+            SettingsCard(title = uiText(R.string.ui_streak_tracker)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3044,13 +3058,13 @@ fun ConnectionsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Habit Tracking",
+                            uiText(R.string.ui_habit_tracking),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = WarmWhite
                         )
                         Text(
-                            "Complete habits by voice",
+                            uiText(R.string.ui_complete_habits_by_voice),
                             fontSize = 10.sp,
                             color = WarmGray
                         )
@@ -3091,9 +3105,9 @@ fun ConnectionsTab(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     when (isStreakOnline) {
-                                        true -> "CONNECTED"
-                                        false -> "OFFLINE"
-                                        null -> "CHECKING..."
+                                        true -> uiText(R.string.neo_connected)
+                                        false -> uiText(R.string.neo_offline)
+                                        null -> uiText(R.string.neo_checking)
                                     },
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
@@ -3105,7 +3119,7 @@ fun ConnectionsTab(
                                     letterSpacing = 1.sp
                                 )
                             }
-                            SmallActionButton(text = "TEST", color = Emerald, onClick = onTestStreakConnection)
+                            SmallActionButton(text = uiText(R.string.ui_test), color = Emerald, onClick = onTestStreakConnection)
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -3126,7 +3140,7 @@ fun ConnectionsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 180)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "🤖 ASSISTANT") {
+            SettingsCard(title = uiText(R.string.ui_assistant)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3134,13 +3148,13 @@ fun ConnectionsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "PiMax Voice Assistant",
+                            uiText(R.string.ui_pimax_voice_assistant),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = WarmWhite
                         )
                         Text(
-                            "Smart routing — streak commands + chat",
+                            uiText(R.string.ui_smart_routing_streak_commands_chat),
                             fontSize = 10.sp,
                             color = WarmGray
                         )
@@ -3181,9 +3195,9 @@ fun ConnectionsTab(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     when (isAssistantOnline) {
-                                        true -> "CONNECTED"
-                                        false -> "OFFLINE"
-                                        null -> "CHECKING..."
+                                        true -> uiText(R.string.neo_connected)
+                                        false -> uiText(R.string.neo_offline)
+                                        null -> uiText(R.string.neo_checking)
                                     },
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
@@ -3195,11 +3209,11 @@ fun ConnectionsTab(
                                     letterSpacing = 1.sp
                                 )
                             }
-                            SmallActionButton(text = "TEST", color = Amber, onClick = onTestAssistantConnection)
+                            SmallActionButton(text = uiText(R.string.ui_test), color = Amber, onClick = onTestAssistantConnection)
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "Turn OFF Streak when using Assistant. Say \"complete [habit]\" or \"status\"",
+                            uiText(R.string.neo_streak_help),
                             fontSize = 10.sp,
                             color = WarmGray,
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
@@ -3224,7 +3238,7 @@ fun ConnectionsTab(
                     .padding(14.dp)
             ) {
                 Text(
-                    "HOW IT WORKS",
+                    uiText(R.string.ui_how_it_works),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     color = WarmGray,
@@ -3232,7 +3246,7 @@ fun ConnectionsTab(
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Enabled connections receive your transcriptions automatically. Each service interprets the text and takes action.",
+                    uiText(R.string.ui_enabled_connections_receive_your_transcriptions_automatically_each_service_interprets_the_text_and_takes_action),
                     fontSize = 11.sp,
                     color = WarmGray,
                     lineHeight = 16.sp
@@ -3313,8 +3327,10 @@ fun SettingsTab(
     ramblerEnabled: Boolean,
     onRamblerEnabledChange: (Boolean) -> Unit,
     voiceKeyboardMode: Boolean,
-    onVoiceKeyboardModeChange: (Boolean) -> Unit
+    onVoiceKeyboardModeChange: (Boolean) -> Unit,
+    onOpenConnections: () -> Unit = {}
 ) {
+    val languageContext = LocalContext.current
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(80)
@@ -3335,7 +3351,7 @@ fun SettingsTab(
             enter = fadeIn(tween(400)) + slideInVertically(initialOffsetY = { -20 })
         ) {
             Text(
-                "SETTINGS",
+                uiText(R.string.ui_settings),
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Black,
                 color = WarmWhite,
@@ -3350,7 +3366,7 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 40)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "LIVE CHUNKING") {
+            SettingsCard(title = uiText(R.string.ui_live_chunking)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3358,13 +3374,13 @@ fun SettingsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Enable Real-time Transcription",
+                            uiText(R.string.ui_enable_real_time_transcription),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = WarmWhite
                         )
                         Text(
-                            "Shows intermediate results while recording",
+                            uiText(R.string.ui_shows_intermediate_results_while_recording),
                             fontSize = 10.sp,
                             color = WarmGray
                         )
@@ -3391,13 +3407,13 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 60)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "INFERENCE MODE") {
+            SettingsCard(title = uiText(R.string.ui_inference_mode)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     TaskChip(
-                        label = "GPU SERVER",
+                        label = uiText(R.string.ui_gpu_server),
                         isSelected = inferenceMode == "GPU_SERVER",
                         onClick = { onInferenceModeChange("GPU_SERVER") },
                         modifier = Modifier.weight(1f)
@@ -3418,9 +3434,9 @@ fun SettingsTab(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     when (inferenceMode) {
-                        "LOCAL" -> "On-device TFLite inference (no internet required)"
-                        "LLM_GATEWAY" -> "Ultra-fast Groq STT via LLM Gateway"
-                        else -> "Transcribe via remote GPU server (Whisper Large V3)"
+                        "LOCAL" -> uiText(R.string.ui_on_device_tflite_inference_no_internet_required)
+                        "LLM_GATEWAY" -> uiText(R.string.ui_ultra_fast_groq_stt_via_llm_gateway)
+                        else -> uiText(R.string.ui_transcribe_via_remote_gpu_server_whisper_large_v3)
                     },
                     fontSize = 10.sp,
                     color = if (inferenceMode == "LOCAL" || inferenceMode == "LLM_GATEWAY") Emerald else WarmGray
@@ -3435,7 +3451,7 @@ fun SettingsTab(
             visible = isVisible && inferenceMode == "LOCAL",
             enter = fadeIn(tween(400, delayMillis = 80)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "LOCAL MODEL") {
+            SettingsCard(title = uiText(R.string.ui_local_model)) {
                 // Model picker
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ModelManager.WhisperModel.values().forEach { model ->
@@ -3488,9 +3504,9 @@ fun SettingsTab(
                                     color = WarmGray
                                 )
                                 val description = when (model) {
-                                    ModelManager.WhisperModel.TINY -> "⚡ Fastest — OK for short English. Struggles with accents & long audio."
-                                    ModelManager.WhisperModel.BASE -> "⭐ Best balance — good English + multilingual. Recommended for daily use."
-                                    ModelManager.WhisperModel.SMALL -> "🎯 Best quality — near-GPU accuracy. Slower, needs more RAM."
+                                    ModelManager.WhisperModel.TINY -> uiText(R.string.ui_fastest_ok_for_short_english_struggles_with_accents_long_audio)
+                                    ModelManager.WhisperModel.BASE -> uiText(R.string.ui_best_balance_good_english_multilingual_recommended_for_daily_use)
+                                    ModelManager.WhisperModel.SMALL -> uiText(R.string.ui_best_quality_near_gpu_accuracy_slower_needs_more_ram)
                                 }
                                 Text(
                                     description,
@@ -3520,14 +3536,14 @@ fun SettingsTab(
                                 }
                                 isInstalled -> {
                                     SmallActionButton(
-                                        text = "DELETE",
+                                        text = uiText(R.string.ui_delete),
                                         color = CoralRed,
                                         onClick = { onDeleteModel(model) }
                                     )
                                 }
                                 else -> {
                                     SmallActionButton(
-                                        text = "DOWNLOAD",
+                                        text = uiText(R.string.ui_download),
                                         color = Amber,
                                         onClick = { onDownloadModel(model) }
                                     )
@@ -3554,10 +3570,10 @@ fun SettingsTab(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         when (engineState) {
-                            is TranscriptionEngine.EngineState.Ready -> "Engine Ready"
-                            is TranscriptionEngine.EngineState.Initializing -> "Initializing..."
-                            is TranscriptionEngine.EngineState.Error -> "Error: ${(engineState as TranscriptionEngine.EngineState.Error).message}"
-                            else -> "Engine Uninitialized"
+                            is TranscriptionEngine.EngineState.Ready -> uiText(R.string.ui_engine_ready)
+                            is TranscriptionEngine.EngineState.Initializing -> uiText(R.string.neo_initializing)
+                            is TranscriptionEngine.EngineState.Error -> uiText(R.string.ui_engine_error, (engineState as TranscriptionEngine.EngineState.Error).message)
+                            else -> uiText(R.string.ui_engine_uninitialized)
                         },
                         fontSize = 11.sp,
                         color = statusColor
@@ -3577,7 +3593,7 @@ fun SettingsTab(
                     is ModelManager.DownloadState.Failed -> {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Download failed: ${state.error}",
+                            uiText(R.string.ui_download_error, state.error),
                             fontSize = 10.sp,
                             color = CoralRed
                         )
@@ -3585,7 +3601,7 @@ fun SettingsTab(
                     is ModelManager.DownloadState.Completed -> {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Download complete!",
+                            uiText(R.string.ui_download_complete),
                             fontSize = 10.sp,
                             color = Emerald
                         )
@@ -3600,7 +3616,7 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 100)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "DISTRIBUTED STT SERVER") {
+            SettingsCard(title = uiText(R.string.ui_distributed_stt_server)) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -3609,13 +3625,13 @@ fun SettingsTab(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Host Local STT Hub",
+                                uiText(R.string.ui_host_local_stt_hub),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = WarmWhite
                             )
                             Text(
-                                "Allows other apps to use this Whisper engine",
+                                uiText(R.string.ui_allows_other_apps_to_use_this_whisper_engine),
                                 fontSize = 10.sp,
                                 color = WarmGray
                             )
@@ -3636,7 +3652,7 @@ fun SettingsTab(
                         OutlinedTextField(
                             value = localServerPort.toString(),
                             onValueChange = { onLocalServerPortChange(it.toIntOrNull() ?: 8060) },
-                            label = { Text("Server Port", fontSize = 12.sp) },
+                            label = { Text(uiText(R.string.ui_server_port), fontSize = 12.sp) },
                             modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -3666,7 +3682,7 @@ fun SettingsTab(
             visible = isVisible && (inferenceMode == "GPU_SERVER" || inferenceMode == "LLM_GATEWAY"),
             enter = fadeIn(tween(400, delayMillis = 80)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "PI SERVER") {
+            SettingsCard(title = uiText(R.string.neo_pi_server)) {
                 StyledTextField(
                     value = serverUrl,
                     onValueChange = onServerUrlChange,
@@ -3681,10 +3697,10 @@ fun SettingsTab(
                 ) {
                     if (inferenceMode == "LLM_GATEWAY") {
                         ServerStatusChip(isGatewayOnline)
-                        SmallActionButton(text = "TEST", color = Amber, onClick = onTestGatewayConnection)
+                        SmallActionButton(text = uiText(R.string.ui_test), color = Amber, onClick = onTestGatewayConnection)
                     } else {
                         ServerStatusChip(isServerOnline)
-                        SmallActionButton(text = "TEST", color = Amber, onClick = onTestConnection)
+                        SmallActionButton(text = uiText(R.string.ui_test), color = Amber, onClick = onTestConnection)
                     }
                 }
                 if (inferenceMode == "LLM_GATEWAY") {
@@ -3698,7 +3714,7 @@ fun SettingsTab(
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                         )
                         Text(
-                            "Ultra-fast relay via Groq Whisper-Large-V3-Turbo",
+                            uiText(R.string.ui_ultra_fast_relay_via_groq_whisper_large_v3_turbo),
                             fontSize = 10.sp,
                             color = Emerald.copy(alpha = 0.6f)
                         )
@@ -3714,9 +3730,9 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 160)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "LANGUAGE") {
+            SettingsCard(title = uiText(R.string.ui_language)) {
                 val languages = listOf(
-                    "Auto" to "Auto Detect",
+                    "Auto" to uiText(R.string.ui_auto_detect),
                     "English" to "English",
                     "German" to "German",
                     "Spanish" to "Spanish",
@@ -3746,19 +3762,19 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 240)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "TRANSCRIPTION TASK") {
+            SettingsCard(title = uiText(R.string.ui_transcription_task)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     TaskChip(
-                        label = "TRANSCRIBE",
+                        label = uiText(R.string.ui_transcribe),
                         isSelected = task == "transcribe",
                         onClick = { onTaskChange("transcribe") },
                         modifier = Modifier.weight(1f)
                     )
                     TaskChip(
-                        label = "TRANSLATE",
+                        label = uiText(R.string.ui_translate),
                         isSelected = task == "translate",
                         onClick = { onTaskChange("translate") },
                         modifier = Modifier.weight(1f)
@@ -3766,7 +3782,7 @@ fun SettingsTab(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (task == "translate") "Audio → English text" else "Audio → Same language text",
+                    if (task == "translate") uiText(R.string.ui_audio_english_text) else uiText(R.string.ui_audio_same_language_text),
                     fontSize = 10.sp,
                     color = WarmGray
                 )
@@ -3781,9 +3797,9 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 280)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "ASSISTANT (POWER BUTTON)") {
+            SettingsCard(title = uiText(R.string.ui_assistant_power_button)) {
                 Text(
-                    "Stop Recording",
+                    uiText(R.string.ui_stop_recording),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = WarmGray,
@@ -3794,13 +3810,13 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     TaskChip(
-                        label = "SILENCE",
+                        label = uiText(R.string.ui_mode_silence),
                         isSelected = assistantStopMode == SettingsDataStore.ASSISTANT_STOP_SILENCE,
                         onClick = { onAssistantStopModeChange(SettingsDataStore.ASSISTANT_STOP_SILENCE) },
                         modifier = Modifier.weight(1f)
                     )
                     TaskChip(
-                        label = "MANUAL",
+                        label = uiText(R.string.ui_mode_manual),
                         isSelected = assistantStopMode == SettingsDataStore.ASSISTANT_STOP_MANUAL,
                         onClick = { onAssistantStopModeChange(SettingsDataStore.ASSISTANT_STOP_MANUAL) },
                         modifier = Modifier.weight(1f)
@@ -3809,8 +3825,8 @@ fun SettingsTab(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     when (assistantStopMode) {
-                        SettingsDataStore.ASSISTANT_STOP_MANUAL -> "Press power button again to stop & transcribe"
-                        else -> "Auto-stops after ${String.format("%.1f", silenceTimeoutMs / 1000.0)}s of silence"
+                        SettingsDataStore.ASSISTANT_STOP_MANUAL -> uiText(R.string.ui_press_power_button_again_to_stop_transcribe)
+                        else -> uiText(R.string.ui_silence_stop, silenceTimeoutMs / 1000.0)
                     },
                     fontSize = 10.sp,
                     color = if (assistantStopMode == SettingsDataStore.ASSISTANT_STOP_MANUAL) Copper else WarmGray
@@ -3819,7 +3835,7 @@ fun SettingsTab(
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    "Animation Style",
+                    uiText(R.string.ui_animation_style),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = WarmGray,
@@ -3830,19 +3846,19 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     TaskChip(
-                        label = "SNAKE",
+                        label = uiText(R.string.ui_mode_snake),
                         isSelected = assistantAnimationMode == SettingsDataStore.ANIMATION_MODE_SNAKE,
                         onClick = { onAssistantAnimationModeChange(SettingsDataStore.ANIMATION_MODE_SNAKE) },
                         modifier = Modifier.weight(1f)
                     )
                     TaskChip(
-                        label = "TREE",
+                        label = uiText(R.string.ui_mode_tree),
                         isSelected = assistantAnimationMode == SettingsDataStore.ANIMATION_MODE_TREE,
                         onClick = { onAssistantAnimationModeChange(SettingsDataStore.ANIMATION_MODE_TREE) },
                         modifier = Modifier.weight(1f)
                     )
                     TaskChip(
-                        label = "CARD",
+                        label = uiText(R.string.ui_mode_card),
                         isSelected = assistantAnimationMode == SettingsDataStore.ANIMATION_MODE_CARD,
                         onClick = { onAssistantAnimationModeChange(SettingsDataStore.ANIMATION_MODE_CARD) },
                         modifier = Modifier.weight(1f)
@@ -3851,9 +3867,9 @@ fun SettingsTab(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     when (assistantAnimationMode) {
-                        SettingsDataStore.ANIMATION_MODE_TREE -> "Organic amber branches growing from the power button"
-                        SettingsDataStore.ANIMATION_MODE_CARD -> "Siri-style card expanding from camera punch hole"
-                        else -> "Classic traveling light snake 'genie' effect"
+                        SettingsDataStore.ANIMATION_MODE_TREE -> uiText(R.string.ui_organic_amber_branches_growing_from_the_power_button)
+                        SettingsDataStore.ANIMATION_MODE_CARD -> uiText(R.string.ui_siri_style_card_expanding_from_camera_punch_hole)
+                        else -> uiText(R.string.ui_classic_traveling_light_snake_genie_effect)
                     },
                     fontSize = 10.sp,
                     color = Amber.copy(alpha = 0.7f)
@@ -3862,7 +3878,7 @@ fun SettingsTab(
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    "Animation Speed: ${String.format("%.1fx", assistantAnimationSpeed)}",
+                    uiText(R.string.ui_animation_speed, assistantAnimationSpeed),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = WarmGray,
@@ -3889,7 +3905,7 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 320)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "HARDWARE BUTTONS") {
+            SettingsCard(title = uiText(R.string.ui_hardware_buttons)) {
                 // Volume PTT
                 Row(
                     modifier = Modifier
@@ -3903,9 +3919,9 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Volume Down PTT", color = WarmWhite, fontSize = 14.sp)
+                        Text(uiText(R.string.ui_volume_down_ptt), color = WarmWhite, fontSize = 14.sp)
                         Text(
-                            "Hold Volume Down to record, release to stop",
+                            uiText(R.string.ui_hold_volume_down_to_record_release_to_stop),
                             color = MutedGray,
                             fontSize = 11.sp
                         )
@@ -3923,14 +3939,14 @@ fun SettingsTab(
                 if (volumePttEnabled) {
                     Spacer(Modifier.height(12.dp))
 
-                    Text("Select PTT Button", color = WarmWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(uiText(R.string.ui_select_ptt_button), color = WarmWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("25" to "VOL DOWN", "24" to "VOL UP").forEach { (code, label) ->
+                        listOf("25" to uiText(R.string.ui_vol_down), "24" to uiText(R.string.ui_vol_up)).forEach { (code, label) ->
                             val isSelected = volumePttKeyCode == code
                             Surface(
                                 modifier = Modifier
@@ -3954,7 +3970,7 @@ fun SettingsTab(
 
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "⚠️ Requires Accessibility Permission",
+                        uiText(R.string.ui_requires_accessibility_permission),
                         color = Amber,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
@@ -3978,9 +3994,9 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Voice Keyboard Mode", color = WarmWhite, fontSize = 14.sp)
+                        Text(uiText(R.string.ui_voice_keyboard_mode), color = WarmWhite, fontSize = 14.sp)
                         Text(
-                            "Dictate live into any text field. Triggers: double-tap volume, or Samsung Side key (below).",
+                            uiText(R.string.ui_dictate_live_into_any_text_field_triggers_double_tap_volume_or_samsung_side_key_below),
                             color = MutedGray,
                             fontSize = 10.sp
                         )
@@ -4005,14 +4021,7 @@ fun SettingsTab(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "Samsung Side key:\n" +
-                            "Settings → Advanced features → Side key → Double press → Open app → WhisperFlow Voice Keyboard\n\n" +
-                            "Samsung Routines / shortcuts:\n" +
-                            "Action: com.pimax.whisperflow.ACTION_VOICE_KEYBOARD\n" +
-                            "Or long-press WhisperFlow icon → Voice Keyboard\n\n" +
-                            "ADB test:\n" +
-                            "am start -a com.pimax.whisperflow.ACTION_VOICE_KEYBOARD -n com.pimax.whisperflow/.VoiceKeyboardTriggerActivity\n\n" +
-                            "Fallback: double-tap Volume Down. Long-press power still creates tasks.",
+                            uiText(R.string.neo_keyboard_setup),
                             color = WarmWhite,
                             fontSize = 10.sp,
                             modifier = Modifier.padding(10.dp),
@@ -4026,10 +4035,10 @@ fun SettingsTab(
                 HorizontalDivider(color = MutedGray.copy(alpha = 0.3f))
                 Spacer(Modifier.height(12.dp))
 
-                Text("DIGITAL ASSISTANT OVERLAY", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(uiText(R.string.ui_digital_assistant_overlay), color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Long-press power/side button to open WhisperFlow as your voice assistant.",
+                    uiText(R.string.ui_long_press_power_side_button_to_open_whisperflow_as_your_voice_assistant),
                     color = MutedGray,
                     fontSize = 11.sp
                 )
@@ -4047,13 +4056,13 @@ fun SettingsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (hasOverlay) "✓ Overlay permission granted" else "Overlay permission required",
+                            if (hasOverlay) uiText(R.string.ui_overlay_permission_granted) else uiText(R.string.ui_overlay_permission_required),
                             color = if (hasOverlay) Emerald else CoralRed,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            "Needed for the assistant UI to appear over other apps",
+                            uiText(R.string.ui_needed_for_the_assistant_ui_to_appear_over_other_apps),
                             color = MutedGray,
                             fontSize = 10.sp
                         )
@@ -4069,7 +4078,7 @@ fun SettingsTab(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Amber)
                         ) {
-                            Text("Grant", color = DeepNoir, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(uiText(R.string.ui_grant), color = DeepNoir, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -4098,7 +4107,7 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 320)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "SOUND & HAPTICS") {
+            SettingsCard(title = uiText(R.string.ui_sound_haptics)) {
                 // Sound Feedback Switch
                 Row(
                     modifier = Modifier
@@ -4112,9 +4121,9 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Sound Feedback", color = WarmWhite, fontSize = 14.sp)
+                        Text(uiText(R.string.ui_sound_feedback), color = WarmWhite, fontSize = 14.sp)
                         Text(
-                            "Play warm tones on start/stop/success/error",
+                            uiText(R.string.ui_play_warm_tones_on_start_stop_success_error),
                             color = MutedGray,
                             fontSize = 11.sp
                         )
@@ -4146,9 +4155,9 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Vibration Feedback", color = WarmWhite, fontSize = 14.sp)
+                        Text(uiText(R.string.ui_vibration_feedback), color = WarmWhite, fontSize = 14.sp)
                         Text(
-                            "Play physical vibration haptic cues",
+                            uiText(R.string.ui_play_physical_vibration_haptic_cues),
                             color = MutedGray,
                             fontSize = 11.sp
                         )
@@ -4169,7 +4178,7 @@ fun SettingsTab(
                     Spacer(Modifier.height(12.dp))
 
                     Text(
-                        "Vibration Intensity: ${(vibrationIntensity * 100).toInt()}%",
+                        uiText(R.string.ui_vibration_intensity, (vibrationIntensity * 100).toInt()),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = WarmGray,
@@ -4197,10 +4206,10 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 320)) + slideInVertically(initialOffsetY = { 20 })
         ) {
-            SettingsCard(title = "TRANSCRIPTION TUNING") {
+            SettingsCard(title = uiText(R.string.ui_transcription_tuning)) {
                 // Chunk Interval
                 Text(
-                    "Chunk Interval: ${String.format("%.1f", chunkIntervalMs / 1000.0)}s",
+                    uiText(R.string.ui_chunk_interval, chunkIntervalMs / 1000.0),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = WarmWhite
@@ -4222,7 +4231,7 @@ fun SettingsTab(
 
                 // Silence Timeout (assistant)
                 Text(
-                    "Silence Timeout (assistant): ${String.format("%.1f", silenceTimeoutMs / 1000.0)}s",
+                    uiText(R.string.ui_silence_timeout, silenceTimeoutMs / 1000.0),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = WarmWhite
@@ -4244,7 +4253,7 @@ fun SettingsTab(
 
                 // Hallucination Filter
                 Text(
-                    "Hallucination Filter: ${String.format("%.2f", hallucinationThreshold)}",
+                    uiText(R.string.ui_hallucination_filter, hallucinationThreshold),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = WarmWhite
@@ -4262,7 +4271,7 @@ fun SettingsTab(
                     )
                 )
                 Text(
-                    "Lower = stricter filtering of hallucinated phrases",
+                    uiText(R.string.ui_lower_stricter_filtering_of_hallucinated_phrases),
                     fontSize = 10.sp,
                     color = WarmGray
                 )
@@ -4271,7 +4280,7 @@ fun SettingsTab(
 
                 // Toast Template
                 Text(
-                    "Toast Template",
+                    uiText(R.string.ui_toast_template),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = WarmWhite,
@@ -4280,7 +4289,7 @@ fun SettingsTab(
                 StyledTextField(
                     value = toastTemplate,
                     onValueChange = onToastTemplateChange,
-                    placeholder = "{text} is replaced with transcription"
+                    placeholder = uiText(R.string.ui_text_is_replaced_with_transcription)
                 )
 
                 Spacer(Modifier.height(16.dp))
@@ -4299,9 +4308,9 @@ fun SettingsTab(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Rambler Voice Dictation", color = WarmWhite, fontSize = 14.sp)
+                        Text(uiText(R.string.ui_rambler_voice_dictation), color = WarmWhite, fontSize = 14.sp)
                         Text(
-                            "Cleanup filler words and self-corrections using LLM Gateway",
+                            uiText(R.string.ui_cleanup_filler_words_and_self_corrections_using_llm_gateway),
                             color = MutedGray,
                             fontSize = 11.sp
                         )
@@ -4325,7 +4334,7 @@ fun SettingsTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 400))
         ) {
-            PrimaryButton(text = "SAVE SETTINGS", onClick = onSave)
+            PrimaryButton(text = uiText(R.string.ui_save_settings), onClick = onSave)
         }
 
         Spacer(Modifier.height(14.dp))
@@ -4343,18 +4352,31 @@ fun SettingsTab(
                     .padding(14.dp)
             ) {
                 Text(
-                    "CONNECTION INFO",
+                    uiText(R.string.ui_connection_info),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     color = WarmGray,
                     letterSpacing = 2.sp
                 )
                 Spacer(Modifier.height(6.dp))
-                InfoRow("Server URL", serverUrl.ifEmpty { "Not configured" })
-                InfoRow("Core", "Your Whisper server")
-                InfoRow("Model", "whisper-large-v3-turbo")
+                InfoRow(uiText(R.string.ui_server_url), serverUrl.ifEmpty { uiText(R.string.ui_not_configured) })
+                InfoRow(uiText(R.string.ui_core), uiText(R.string.ui_your_whisper_server))
+                InfoRow(uiText(R.string.ui_model), "whisper-large-v3-turbo")
                 InfoRow("Gradio", "6.5.1")
                 InfoRow("API", "/gradio_api/call/transcribe")
+            }
+        }
+
+        SettingsCard(title = androidx.compose.ui.res.stringResource(R.string.advanced_section)) {
+            TextButton(onClick = {
+                val current = com.pimax.whisperflow.sync.UiLanguage.code(languageContext)
+                com.pimax.whisperflow.sync.UiLanguage.set(languageContext, if (current == "ru") "en" else "ru")
+                (languageContext as? android.app.Activity)?.recreate()
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(androidx.compose.ui.res.stringResource(R.string.interface_language), color = Amber)
+            }
+            TextButton(onClick = onOpenConnections, modifier = Modifier.fillMaxWidth()) {
+                Text(androidx.compose.ui.res.stringResource(R.string.external_connections), color = Amber)
             }
         }
 

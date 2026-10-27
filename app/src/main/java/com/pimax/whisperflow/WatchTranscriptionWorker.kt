@@ -70,7 +70,10 @@ class WatchTranscriptionWorker(context: Context, params: WorkerParameters) : Cor
         } catch (error: Exception) {
             repository.update(id, "FAILED", error = error.message ?: applicationContext.getString(R.string.memory_transcription_failed))
             return if (runAttemptCount < 2) Result.retry() else Result.success()
-        } finally { engine.close() }
+        } finally {
+            engine.close()
+            runCatching { NoteVaultSyncWorker.enqueue(applicationContext) }
+        }
     }
 
     private fun foreground(id: String): ForegroundInfo {

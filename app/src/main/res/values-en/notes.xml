@@ -1,0 +1,37 @@
+<resources>
+    <string name="notes_trash">Trash</string>
+    <string name="notes_restore">Restore</string>
+    <string name="interface_language">Language: Русский / English</string>
+    <string name="note_voice_title">Voice note</string>
+    <string name="note_untitled">Untitled</string>
+    <string name="note_new_heading">New note</string>
+    <string name="notes_title">Notes</string>
+    <string name="notes_new">New</string>
+    <string name="notes_vault">Folder</string>
+    <string name="notes_sync">Sync</string>
+    <string name="notes_audio_history">Audio recordings and transcripts</string>
+    <string name="notes_private_hint">Notes are Markdown files. Choose a folder to open them in Obsidian.</string>
+    <string name="notes_vault_hint">The selected folder is a shared Markdown vault. External edits are loaded when the app opens and on sync.</string>
+    <string name="notes_empty">Your voice recordings will appear here as notes. You can also create a note.</string>
+    <string name="notes_folder_error">Cannot access the folder. Choose a writable directory.</string>
+    <string name="notes_sync_done">Vault synchronized</string>
+    <string name="notes_sync_failed">Folder sync failed. Local notes are safe.</string>
+    <string name="notes_back">Back</string>
+    <string name="notes_edit">Edit</string>
+    <string name="notes_preview">Preview</string>
+    <string name="notes_save">Save</string>
+    <string name="notes_markdown">Markdown</string>
+    <string name="notes_delete">Delete note</string>
+    <string name="notes_delete_hint">Delete the note from the list and selected folder? Original audio stays in recording history; a private note copy remains in app trash.</string>
+    <string name="notes_cancel">Cancel</string>
+    <string name="notes_load_error">Cannot open note</string>
+    <string name="notes_save_error">Cannot save. Your text is still in the editor.</string>
+    <string name="notes_conflict_saved">The note changed externally. Your edit was saved as a separate copy.</string>
+    <string name="notes_audio_error">Cannot play audio</string>
+    <string name="notes_play">Play</string>
+    <string name="notes_pause">Pause</string>
+    <string name="nav_record">Record</string>
+    <string name="nav_settings">Settings</string>
+    <string name="external_connections">External connections</string>
+    <string name="advanced_section">Advanced</string>
+</resources>

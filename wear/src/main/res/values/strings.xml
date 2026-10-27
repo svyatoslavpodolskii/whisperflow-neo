@@ -1,6 +1,14 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
   <string name="app_name">WhisperFlow: Neo</string>
+  <string name="interface_language">Язык: Русский / English</string>
+  <string name="capture_settings">Настройки</string>
+  <string name="quick_capture">Запись при запуске</string>
+  <string name="auto_stop">Автостоп по тишине</string>
+  <string name="silence_seconds">Пауза: %1$d сек.</string>
+  <string name="haptics">Вибрация</string>
+  <string name="choose_assistant">Назначить ассистентом</string>
+  <string name="assistant_unavailable">Прошивка может ограничивать выбор ассистента. Двойное нажатие Home остаётся доступным через назначение приложения.</string>
   <string name="pending_count">Ожидают отправки: %1$d</string>
   <string name="tap_to_record">Запись</string>
   <string name="stop">Стоп</string>

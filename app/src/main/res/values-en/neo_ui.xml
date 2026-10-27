@@ -1,0 +1,11 @@
+<resources>
+    <string name="neo_connected">CONNECTED</string>
+    <string name="neo_offline">OFFLINE</string>
+    <string name="neo_checking">CHECKING...</string>
+    <string name="neo_processing">PROCESSING...</string>
+    <string name="neo_initializing">Initializing...</string>
+    <string name="neo_pi_server">PI SERVER</string>
+    <string name="neo_streak_help">Turn OFF Streak when using Assistant. Say \"complete [habit]\" or \"status\"</string>
+    <string name="neo_keyboard_setup">Samsung Side key:\nSettings → Advanced features → Side key → Double press → Open app → WhisperFlow Voice Keyboard\n\nSamsung Routines / shortcuts:\nAction: com.pimax.whisperflow.ACTION_VOICE_KEYBOARD\nOr long-press WhisperFlow icon → Voice Keyboard\n\nADB test:\nam start -a com.pimax.whisperflow.ACTION_VOICE_KEYBOARD -n com.pimax.whisperflow/.VoiceKeyboardTriggerActivity\n\nFallback: double-tap Volume Down. Long-press power still creates tasks.</string>
+    <string name="neo_identity">IDENTITY</string>
+</resources>

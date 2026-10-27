@@ -68,6 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -120,16 +121,23 @@ enum class WatchState {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class WearMainActivity : ComponentActivity() {
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(com.pimax.whisperflow.sync.UiLanguage.wrap(base))
     private lateinit var recorder: WearAudioRecorder
+    private var launchGeneration by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         recorder = WearAudioRecorder(this)
-        CaptureSyncWorker.enqueue(applicationContext)
 
         setContent {
-            WearWhisperApp(recorder)
+            WearWhisperApp(recorder, WearCapturePreferences(this).quickCapture, launchGeneration)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        launchGeneration++
     }
 
     override fun onDestroy() {
@@ -144,7 +152,9 @@ class WearMainActivity : ComponentActivity() {
 
 @Composable
 fun WearWhisperApp(
-    recorder: WearAudioRecorder
+    recorder: WearAudioRecorder,
+    startImmediately: Boolean = false,
+    launchGeneration: Int = 0
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -238,6 +248,8 @@ fun WearWhisperApp(
                     scope.launch {
                         recorder.startRecording(
                             onAmplitudeUpdate = { amplitude = it },
+                            autoStopOnSilence = WearCapturePreferences(context).autoStop,
+                            silenceTimeoutMs = WearCapturePreferences(context).silenceSeconds * 1000L,
                             onError = {
                                 errorText = context.getString(R.string.error_recording)
                                 watchState = WatchState.ERROR
@@ -280,6 +292,14 @@ fun WearWhisperApp(
         }
     }
 
+    LaunchedEffect(startImmediately, launchGeneration) {
+        if (startImmediately && watchState == WatchState.IDLE) onRecord()
+    }
+    LaunchedEffect(Unit) {
+        delay(500)
+        if (watchState != WatchState.RECORDING) CaptureSyncWorker.enqueue(context.applicationContext)
+    }
+
     LaunchedEffect(permissionStart) {
         if (permissionStart) {
             permissionStart = false
@@ -314,7 +334,7 @@ fun WearWhisperApp(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp)
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)
                 ) {
 
                     RecordButton(
@@ -363,11 +383,15 @@ fun WearWhisperApp(
 
 
                     Spacer(Modifier.height(6.dp))
+                    if (watchState == WatchState.IDLE) {
+                        Text(stringResource(R.string.capture_settings), color = TextGray, fontSize = 10.sp,
+                            modifier = Modifier.clickable { context.startActivity(Intent(context, WearCaptureSettingsActivity::class.java)) }.padding(4.dp))
+                    }
                     if (watchState == WatchState.IDLE && pending.isNotEmpty()) {
                         Text(
                             stringResource(R.string.pending_count, pending.size),
                             color = AmberLight, fontSize = 10.sp, textAlign = TextAlign.Center,
-                            modifier = Modifier.clickable { CaptureSyncWorker.enqueue(context.applicationContext) }.padding(6.dp)
+                            modifier = Modifier.clickable { CaptureSyncWorker.enqueue(context.applicationContext) }.padding(2.dp)
                         )
                     }
                 }
@@ -385,16 +409,12 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
     val isRecording = watchState == WatchState.RECORDING
     val isBusy = watchState == WatchState.SENDING || watchState == WatchState.TRANSCRIBING
 
-    val pulse = if (isRecording) {
-        val transition = rememberInfiniteTransition(label = "recordingPulse")
-        val value by transition.animateFloat(
-            initialValue = 1f, targetValue = 1.08f,
-            animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-            label = "pulse"
-        )
-        value
-    } else 1f
-    val scale = pulse
+    val transition = if (isRecording) rememberInfiniteTransition(label = "recordingPulse") else null
+    val pulse = transition?.animateFloat(
+        initialValue = 1f, targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse"
+    )
     val ringAlpha = if (isRecording) 0.4f else 0f
 
     val buttonColor = when {
@@ -403,7 +423,7 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
         else -> Amber
     }
 
-    Box(contentAlignment = Alignment.Center) {
+    Box(Modifier.size(80.dp), contentAlignment = Alignment.Center) {
         // Outer ring when recording
         if (isRecording) {
             Canvas(Modifier.size(80.dp)) {
@@ -417,7 +437,10 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
 
         Button(
             onClick = onClick,
-            modifier = Modifier.size((64 * scale).dp),
+            modifier = Modifier.size(64.dp).graphicsLayer {
+                val scale = pulse?.value ?: 1f
+                scaleX = scale; scaleY = scale
+            },
             colors = ButtonDefaults.buttonColors(backgroundColor = buttonColor, contentColor = DeepNoir),
             shape = CircleShape,
             enabled = !isBusy
@@ -444,7 +467,7 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
 private fun WaveformVisualizer(amplitudes: List<Float>, modifier: Modifier = Modifier) {
     val barCount = 24
     val infiniteTransition = rememberInfiniteTransition(label = "idle")
-    val idlePhase by infiniteTransition.animateFloat(
+    val idlePhase = infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 6.28f,
         animationSpec = infiniteRepeatable(tween(2500, easing = LinearEasing), RepeatMode.Restart),
         label = "phase"
@@ -476,7 +499,7 @@ private fun WaveformVisualizer(amplitudes: List<Float>, modifier: Modifier = Mod
                 boosted[ampIndex]
             } else {
                 // Idle wave animation - gentle breathing
-                val phase = idlePhase + i * 0.28f
+                val phase = idlePhase.value + i * 0.28f
                 (kotlin.math.sin(phase) * 0.06f + 0.08f).toFloat()
             }
 
@@ -670,7 +693,7 @@ private fun getVibrator(context: Context): Vibrator {
     }
 }
 
-private fun vibrateStart(context: Context) = getVibrator(context).vibrate(VibrationEffect.createOneShot(25, 70))
-private fun vibrateStop(context: Context) = getVibrator(context).vibrate(VibrationEffect.createOneShot(20, 50))
-private fun vibrateSuccess(context: Context) = getVibrator(context).vibrate(VibrationEffect.createWaveform(longArrayOf(0, 25, 40, 25), intArrayOf(0, 90, 0, 50), -1))
-private fun vibrateError(context: Context) = getVibrator(context).vibrate(VibrationEffect.createOneShot(80, 150))
+private fun vibrateStart(context: Context) { if (WearCapturePreferences(context).haptics) getVibrator(context).vibrate(VibrationEffect.createOneShot(25, 70)) }
+private fun vibrateStop(context: Context) { if (WearCapturePreferences(context).haptics) getVibrator(context).vibrate(VibrationEffect.createOneShot(20, 50)) }
+private fun vibrateSuccess(context: Context) { if (WearCapturePreferences(context).haptics) getVibrator(context).vibrate(VibrationEffect.createWaveform(longArrayOf(0, 25, 40, 25), intArrayOf(0, 90, 0, 50), -1)) }
+private fun vibrateError(context: Context) { if (WearCapturePreferences(context).haptics) getVibrator(context).vibrate(VibrationEffect.createOneShot(80, 150)) }

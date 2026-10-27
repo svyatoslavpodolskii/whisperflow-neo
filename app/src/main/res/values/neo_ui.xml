@@ -1,0 +1,11 @@
+<resources>
+    <string name="neo_connected">ПОДКЛЮЧЕНО</string>
+    <string name="neo_offline">НЕТ СВЯЗИ</string>
+    <string name="neo_checking">ПРОВЕРКА…</string>
+    <string name="neo_processing">ОБРАБОТКА…</string>
+    <string name="neo_initializing">Инициализация…</string>
+    <string name="neo_pi_server">СЕРВЕР PI</string>
+    <string name="neo_streak_help">При использовании ассистента отключите Streak. Команды сервиса: «complete [habit]» или «status».</string>
+    <string name="neo_keyboard_setup">Кнопка Samsung:\nНастройки → Дополнительные функции → Боковая кнопка → Двойное нажатие → Открыть приложение → WhisperFlow Voice Keyboard\n\nСценарии Samsung / ярлыки:\nДействие: com.pimax.whisperflow.ACTION_VOICE_KEYBOARD\nИли удерживайте значок WhisperFlow → Voice Keyboard\n\nПроверка через ADB:\nam start -a com.pimax.whisperflow.ACTION_VOICE_KEYBOARD -n com.pimax.whisperflow/.VoiceKeyboardTriggerActivity\n\nТакже работает двойное нажатие уменьшения громкости. Удержание питания по-прежнему создаёт задачи.</string>
+    <string name="neo_identity">УЧЁТНАЯ ЗАПИСЬ</string>
+</resources>

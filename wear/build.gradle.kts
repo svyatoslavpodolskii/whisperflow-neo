@@ -13,8 +13,8 @@ android {
         applicationId = "com.pimax.whisperflow"
         minSdk = 30 // Wear OS 3.0+
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.1-neo"
+        versionCode = 4
+        versionName = "1.2-neo"
     }
 
     signingConfigs {

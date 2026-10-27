@@ -1,0 +1,37 @@
+<resources>
+    <string name="notes_trash">Корзина</string>
+    <string name="notes_restore">Восстановить</string>
+    <string name="interface_language">Язык: Русский / English</string>
+    <string name="note_voice_title">Голосовая заметка</string>
+    <string name="note_untitled">Без названия</string>
+    <string name="note_new_heading">Новая заметка</string>
+    <string name="notes_title">Заметки</string>
+    <string name="notes_new">Новая</string>
+    <string name="notes_vault">Папка</string>
+    <string name="notes_sync">Синхронизация</string>
+    <string name="notes_audio_history">Аудиозаписи и транскрипции</string>
+    <string name="notes_private_hint">Заметки сохраняются в Markdown. Выберите папку, чтобы открыть их в Obsidian.</string>
+    <string name="notes_vault_hint">Выбранная папка — общее Markdown-хранилище. Изменения из неё загружаются при открытии приложения и синхронизации.</string>
+    <string name="notes_empty">Здесь появятся заметки из голосовых записей. Можно создать заметку вручную.</string>
+    <string name="notes_folder_error">Нет доступа к папке. Выберите доступный для записи каталог.</string>
+    <string name="notes_sync_done">Хранилище синхронизировано</string>
+    <string name="notes_sync_failed">Не удалось синхронизировать папку. Локальные заметки сохранены.</string>
+    <string name="notes_back">Назад</string>
+    <string name="notes_edit">Редактор</string>
+    <string name="notes_preview">Просмотр</string>
+    <string name="notes_save">Сохранить</string>
+    <string name="notes_markdown">Markdown</string>
+    <string name="notes_delete">Удалить заметку</string>
+    <string name="notes_delete_hint">Удалить заметку из списка и выбранной папки? Исходное аудио останется в истории записей, локальная копия заметки — в корзине приложения.</string>
+    <string name="notes_cancel">Отмена</string>
+    <string name="notes_load_error">Не удалось открыть заметку</string>
+    <string name="notes_save_error">Не удалось сохранить. Текст остался в редакторе.</string>
+    <string name="notes_conflict_saved">Заметка изменилась извне. Ваша правка сохранена отдельной копией.</string>
+    <string name="notes_audio_error">Не удалось воспроизвести аудио</string>
+    <string name="notes_play">Слушать</string>
+    <string name="notes_pause">Пауза</string>
+    <string name="nav_record">Запись</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="external_connections">Внешние подключения</string>
+    <string name="advanced_section">Дополнительно</string>
+</resources>

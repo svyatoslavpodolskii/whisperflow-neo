@@ -481,6 +481,7 @@ class SettingsDataStore(private val context: Context) {
                 preferences[HISTORY_KEY] = fresh.toString()
             }
         }
+        runCatching { NoteVaultSyncWorker.enqueue(context.applicationContext) }
     }
 
     suspend fun deleteHistoryEntry(timestamp: Long) {

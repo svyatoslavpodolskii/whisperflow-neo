@@ -39,269 +39,138 @@ class WearAudioRecorder(private val context: Context) {
         private val activeSpools = ConcurrentHashMap.newKeySet<String>()
         fun isSpoolActive(id: String) = activeSpools.contains(id)
     }
+    @Volatile var isRecording = false
+        private set
+    @Volatile var recordingId = java.util.UUID.randomUUID().toString()
+        private set
+    val currentAmplitude: Float get() = pipeline?.amplitude ?: 0f
     private var spool: File? = null
-    private var spoolOutput: FileOutputStream? = null
-    @Volatile private var recoveringOnClose = false
-    var recordingId: String = java.util.UUID.randomUUID().toString()
-        private set
-
-    @Volatile
-    var isRecording: Boolean = false
-        private set
-
-    /** Normalized amplitude 0.0–1.0, updated ~30fps during recording */
-    var currentAmplitude: Float = 0f
-        private set
-
-    private var audioRecord: AudioRecord? = null
-    private var pcmBuffer: ByteArrayOutputStream? = null
+    @Volatile private var pipeline: PcmCapturePipeline? = null
     private var recordingJob: Job? = null
-
-    val hasPendingAudio: Boolean
-        get() = !isRecording && (pcmBuffer?.size() ?: 0) > 0
+    @Volatile private var recoveringOnClose = false
+    val hasPendingAudio: Boolean get() = !isRecording && (spool?.length() ?: 0) > 0
 
     fun confirmSaved() {
         check(!isRecording)
-        pcmBuffer = null
         spool?.delete()
         activeSpools.remove(recordingId)
     }
 
-    private var speechDetected = false
-    private var silenceStartMs = 0L
-
-    /**
-     * Start recording. Returns immediately.
-     * [onAmplitudeUpdate] called ~30fps with normalized amplitude (0.0–1.0).
-     * [onAutoStop] called when silence detection triggers auto-stop.
-     * [onMaxDuration] called at the ten-minute safety limit.
-     */
     suspend fun startRecording(
         onAmplitudeUpdate: (Float) -> Unit = {},
         onAutoStop: () -> Unit = {},
         onMaxDuration: () -> Unit = {},
         onError: () -> Unit = {},
-        autoStopOnSilence: Boolean = false
-    ) {
-        if (isRecording) {
-            Log.w(TAG, "Already recording, ignoring start")
-            return
+        autoStopOnSilence: Boolean = false,
+        silenceTimeoutMs: Long = 3000
+    ) = coroutineScope {
+        if (isRecording) return@coroutineScope
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            onError(); return@coroutineScope
         }
-
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.e(TAG, "RECORD_AUDIO permission not granted")
-            onError()
-            return
-        }
-
-        val bufferSize = max(
-            AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT),
-            SAMPLE_RATE * 2 // at least 1 second buffer
-        )
-
-        try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                bufferSize
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Unable to create AudioRecord", e)
-            onError()
-            return
-        }
-
-        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord failed to initialize")
-            audioRecord?.release()
-            audioRecord = null
-            onError()
-            return
-        }
-
+        isRecording = true
+        recoveringOnClose = false
         recordingId = java.util.UUID.randomUUID().toString()
         activeSpools.add(recordingId)
-        recoveringOnClose = false
-        try {
-            val directory = File(context.filesDir, "capture_spool").apply { check(isDirectory || mkdirs()) }
-            spool = File(directory, "$recordingId.pcm")
-            spoolOutput = FileOutputStream(spool)
-        } catch (error: Exception) {
-            activeSpools.remove(recordingId)
-            audioRecord?.release()
-            audioRecord = null
-            onError()
-            return
-        }
-        pcmBuffer = ByteArrayOutputStream()
-        speechDetected = false
-        silenceStartMs = 0L
-        isRecording = true
-        currentAmplitude = 0f
-
-        val startTime = SystemClock.elapsedRealtime()
-
-        coroutineScope {
-            recordingJob = launch(Dispatchers.IO) {
-                val buffer = ShortArray(SAMPLE_RATE / 20)
-                try {
-                    audioRecord?.startRecording()
-                    Log.d(TAG, "Recording started (bufferSize=$bufferSize)")
-
-                    while (isActive && isRecording) {
-                        val elapsed = SystemClock.elapsedRealtime() - startTime
-
-                        // Max duration check
-                        if (elapsed >= MAX_DURATION_MS) {
-                            Log.d(TAG, "Max duration reached (${MAX_DURATION_MS}ms)")
-                            isRecording = false
-                            withContext(Dispatchers.Main) { onMaxDuration() }
-                            break
-                        }
-
-                        val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
-                        check(read >= 0) { "AudioRecord.read failed: $read" }
-                        if (read == 0) continue
-
-                        // Write PCM data to buffer
-                        val sampleCount = minOf(read, ((19_200_000 - (pcmBuffer?.size() ?: 0)) / 2).coerceAtLeast(0))
-                        val byteArray = ByteArray(sampleCount * 2)
-                        for (i in 0 until sampleCount) {
-                            byteArray[i * 2] = (buffer[i].toInt() and 0xFF).toByte()
-                            byteArray[i * 2 + 1] = (buffer[i].toInt() shr 8 and 0xFF).toByte()
-                        }
-                        // Stream to disk as well: a process death must not discard the entire capture.
-                        spoolOutput?.write(byteArray)
-                        pcmBuffer?.write(byteArray)
-
-                        // Compute amplitude
-                        var maxAmp = 0
-                        for (i in 0 until read) {
-                            maxAmp = max(maxAmp, abs(buffer[i].toInt()))
-                        }
-                        val normalizedAmp = (maxAmp / 32768f).coerceIn(0f, 1f)
-                        currentAmplitude = normalizedAmp
-
-                        withContext(Dispatchers.Main) {
-                            onAmplitudeUpdate(normalizedAmp)
-                        }
-
-                        // Silence detection (only after speech has been detected)
-                        if (autoStopOnSilence) {
-                            if (maxAmp > SPEECH_THRESHOLD) {
-                                speechDetected = true
-                                silenceStartMs = 0L
-                            } else if (speechDetected && maxAmp < SILENCE_THRESHOLD) {
-                                if (silenceStartMs == 0L) {
-                                    silenceStartMs = SystemClock.elapsedRealtime()
-                                } else if (SystemClock.elapsedRealtime() - silenceStartMs >= SILENCE_TIMEOUT_MS) {
-                                    Log.d(TAG, "Silence detected for ${SILENCE_TIMEOUT_MS}ms, auto-stopping")
-                                    isRecording = false
-                                    withContext(Dispatchers.Main) { onAutoStop() }
-                                    break
-                                }
-                            } else if (speechDetected && maxAmp >= SILENCE_THRESHOLD && maxAmp <= SPEECH_THRESHOLD) {
-                                // Ambiguous zone — don't reset silence timer
-                            }
-                        }
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    Log.e(TAG, "Audio capture failed", error)
-                    isRecording = false
-                    withContext(Dispatchers.Main) { onError() }
-                } finally {
-                    try { audioRecord?.stop() } catch (_: IllegalStateException) {}
-                    try { spoolOutput?.fd?.sync() } catch (error: Exception) { Log.e(TAG, "PCM sync failed", error) }
-                    try { spoolOutput?.close() } catch (_: Exception) {}
-                    spoolOutput = null
-                    if (recoveringOnClose) {
-                        audioRecord?.release()
-                        audioRecord = null
-                        activeSpools.remove(recordingId)
-                        CaptureSyncWorker.enqueue(context.applicationContext)
+        // All microphone setup and disk access are also outside Main.
+        recordingJob = launch(Dispatchers.IO) {
+            var stream: FileOutputStream? = null
+            var monitor: Job? = null
+            var failed = false
+            try {
+                val directory = File(context.filesDir, "capture_spool").apply { check(isDirectory || mkdirs()) }
+                val journal = File(directory, "$recordingId.pcm").also { spool = it }
+                stream = FileOutputStream(journal)
+                val buffered = object : java.io.BufferedOutputStream(stream, 8192) {
+                    private var lastFlush = SystemClock.elapsedRealtime()
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                        super.write(bytes, offset, length)
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastFlush >= 200) { flush(); lastFlush = now }
                     }
                 }
-                Log.d(TAG, "Recording stopped, PCM bytes: ${pcmBuffer?.size() ?: 0}")
+                val bufferSize = max(AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT), SAMPLE_RATE * 4)
+                val native = AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, bufferSize)
+                if (native.state != AudioRecord.STATE_INITIALIZED) { native.release(); error("AudioRecord initialization failed") }
+                val capture = PcmCapturePipeline(object : PcmCapturePipeline.Source {
+                    override fun start() = native.startRecording()
+                    override fun read(samples: ShortArray): Int = native.read(samples, 0, samples.size, AudioRecord.READ_BLOCKING)
+                    override fun stop() { runCatching { native.stop() } }
+                    override fun release() = native.release()
+                }, buffered, prioritizeReader = {
+                    runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
+                        .onFailure { Log.w(TAG, "Audio priority unavailable", it) }
+                })
+                pipeline = capture
+                capture.start()
+                if (!isRecording || recoveringOnClose) capture.stop()
+                // A slow/blocked Main can skip display updates; it cannot delay the reader.
+                monitor = launch(Dispatchers.Main) {
+                    var speech = false
+                    var silenceSince = 0L
+                    while (isRecording) {
+                        val amplitude = capture.amplitude
+                        onAmplitudeUpdate(amplitude)
+                        if (autoStopOnSilence) {
+                            val now = SystemClock.elapsedRealtime()
+                            if (amplitude > 0.045f) { speech = true; silenceSince = 0 }
+                            else if (speech && amplitude < 0.024f) {
+                                if (silenceSince == 0L) silenceSince = now
+                                if (now - silenceSince >= silenceTimeoutMs) { onAutoStop(); break }
+                            }
+                        }
+                        delay(66)
+                    }
+                }
+                capture.await()
+                buffered.flush()
+                stream.fd.sync()
+                if (capture.reachedLimit && !recoveringOnClose) {
+                    isRecording = false
+                    withContext(Dispatchers.Main) { onMaxDuration() }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                failed = true
+                Log.e(TAG, "Audio capture failed; journal retained", error)
+            } finally {
+                pipeline?.stop()
+                monitor?.cancel()
+                runCatching { stream?.fd?.sync() }
+                runCatching { stream?.close() }
+                isRecording = false
+                if (recoveringOnClose) {
+                    activeSpools.remove(recordingId)
+                    CaptureSyncWorker.enqueue(context.applicationContext)
+                }
             }
+            if (failed && !recoveringOnClose) withContext(Dispatchers.Main) { onError() }
         }
     }
 
-    /**
-     * Get intermediate WAV data without stopping the recording.
-     * Used for live transcription chunks.
-     */
-    fun getIntermediateWav(): ByteArray? {
-        if (!isRecording) return null
+    fun getIntermediateWav(): ByteArray? = null // Watch capture never performs live inference/uploads.
 
-        val pcmData = pcmBuffer?.toByteArray()
-        if (pcmData == null || pcmData.size < 3200) { // At least 0.1s of audio
-            return null
-        }
-
-        // Return WAV of current buffer without clearing it
-        return WearWav.encode(pcmData)
-    }
-
-    /**
-     * Stop recording and return the WAV data as a byte array (in-memory, no file I/O).
-     * Returns null if no audio was captured.
-     */
     suspend fun stopAndGetWav(): ByteArray? {
         isRecording = false
-        currentAmplitude = 0f
-
-        // Wait for the final PCM write before reading the buffer or releasing AudioRecord.
+        pipeline?.stop()
         recordingJob?.join()
         recordingJob = null
-
-        try {
-            audioRecord?.stop()
-        } catch (e: IllegalStateException) {
-            Log.w(TAG, "AudioRecord.stop() failed: ${e.message}")
+        pipeline = null
+        return withContext(Dispatchers.IO) {
+            val bytes = spool?.takeIf { it.length() >= 2 }?.readBytes() ?: return@withContext null
+            WearWav.encode(bytes.copyOf(bytes.size - bytes.size % 2))
         }
-        audioRecord?.release()
-        audioRecord = null
-
-        val pcmData = pcmBuffer?.toByteArray()
-
-        if (pcmData == null || pcmData.isEmpty()) {
-            Log.w(TAG, "No PCM data captured")
-            return null
-        }
-
-        val durationMs = pcmData.size.toLong() * 1000L / (SAMPLE_RATE * 2)
-
-        Log.d(TAG, "Encoding WAV: ${pcmData.size} PCM bytes, ~${durationMs}ms")
-        return WearWav.encode(pcmData)
     }
 
-    /** Force-stop without returning data */
     fun cancel() {
         recoveringOnClose = true
         isRecording = false
-        currentAmplitude = 0f
-        val running = recordingJob?.isCompleted == false
-        recordingJob?.cancel()
-        recordingJob = null
-
-        // An active read owns cleanup in finally. Do not release AudioRecord underneath it.
-        if (!running) {
-            try { audioRecord?.stop() } catch (_: Exception) {}
-            audioRecord?.release()
-            audioRecord = null
-            try { spoolOutput?.fd?.sync() } catch (_: Exception) {}
-            try { spoolOutput?.close() } catch (_: Exception) {}
-            spoolOutput = null
+        pipeline?.stop()
+        // Let the owned job drain and fsync the journal. Do not cancel away pending PCM.
+        if (recordingJob?.isCompleted != false) {
             activeSpools.remove(recordingId)
             if (spool?.exists() == true) CaptureSyncWorker.enqueue(context.applicationContext)
         }
-        pcmBuffer = null
     }
-
 }
