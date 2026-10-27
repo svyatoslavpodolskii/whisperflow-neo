@@ -136,6 +136,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WATCH)) {
+            setContent {
+                Box(Modifier.fillMaxSize().background(Color.Black).padding(24.dp), contentAlignment = Alignment.Center) {
+                    Text(androidx.compose.ui.res.stringResource(R.string.memory_phone_apk_on_watch), color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Center)
+                }
+            }
+            return
+        }
         audioRecorder = AudioRecorder(this)
         SoundFeedback.initialize(this)
         enableEdgeToEdge()

@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">WhisperFlow X</string>
     <string name="memory_watch_title">Записи с часов</string>
+    <string name="memory_phone_apk_on_watch">Это APK для телефона. На часы установите VoiceMemory-Wear-debug — WhisperFlow X.</string>
     <string name="memory_watch_source">ЧАСЫ</string>
     <string name="memory_processing">Расшифровывается</string>
     <string name="memory_done">Готово</string>
