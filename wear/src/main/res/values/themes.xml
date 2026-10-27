@@ -1,0 +1,6 @@
+<resources>
+    <style name="NeoWatchTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">#0A0A0F</item>
+        <item name="android:colorAccent">#FF8B00</item>
+    </style>
+</resources>

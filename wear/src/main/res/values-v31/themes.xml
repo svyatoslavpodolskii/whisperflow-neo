@@ -1,0 +1,10 @@
+<resources>
+    <style name="NeoWatchTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">#0A0A0F</item>
+        <item name="android:colorAccent">#FF8B00</item>
+        <item name="android:windowSplashScreenBackground">#0A0A0F</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/neo_splash_empty</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+    </style>
+</resources>

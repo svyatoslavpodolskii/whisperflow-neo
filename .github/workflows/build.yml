@@ -2,7 +2,7 @@ name: Build & Test
 
 concurrency:
   group: VoiceMemory-development-build
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 on:
   push:

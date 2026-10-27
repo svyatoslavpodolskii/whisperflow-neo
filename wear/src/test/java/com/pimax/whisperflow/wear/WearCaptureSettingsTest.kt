@@ -13,6 +13,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class WearCaptureSettingsTest {
+    @Test fun systemStartingWindowHasNoMicrophoneIconBeforeComposeStarts() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val themed = android.view.ContextThemeWrapper(context, R.style.NeoWatchTheme)
+        val value = android.util.TypedValue()
+        assertTrue(themed.theme.resolveAttribute(android.R.attr.windowSplashScreenAnimatedIcon, value, true))
+        assertEquals(R.drawable.neo_splash_empty, value.resourceId)
+    }
     @Test fun quickCaptureIsDefaultAndUserPreferencesSurviveRecreation() {
         val context: Context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("capture_preferences", Context.MODE_PRIVATE).edit().clear().commit()
