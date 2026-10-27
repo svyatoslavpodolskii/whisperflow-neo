@@ -2,7 +2,6 @@ name: Build & Test
 
 on:
   push:
-    branches: [main]
     paths-ignore:
       - '**.md'
       - 'screenshots/**'
@@ -30,12 +29,29 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
-      - name: Upload APK artifact
+        run: ./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest --no-daemon
+      - name: Build phone and watch from the same commit
+        run: ./gradlew :app:assembleDebug :wear:assembleDebug --no-daemon
+      - name: Upload phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: VoiceMemory-Phone-debug
           path: app/build/outputs/apk/debug/whisperflow-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload watch APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceMemory-Wear-debug
+          path: wear/build/outputs/apk/debug/whisperflow-wear-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload paired APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceMemory-debug
+          path: |
+            app/build/outputs/apk/debug/whisperflow-debug.apk
+            wear/build/outputs/apk/debug/whisperflow-wear-debug.apk
+          if-no-files-found: error
           retention-days: 7

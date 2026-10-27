@@ -7,6 +7,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.WindowManager
+import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -46,6 +51,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -115,28 +121,14 @@ enum class WatchState {
 
 class WearMainActivity : ComponentActivity() {
     private lateinit var recorder: WearAudioRecorder
-    private lateinit var dataSender: WatchDataSender
-    private lateinit var settings: WearSettings
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         recorder = WearAudioRecorder(this)
-        dataSender = WatchDataSender(this)
-        settings = WearSettings(this)
 
         setContent {
-            WearWhisperApp(recorder, dataSender, settings)
+            WearWhisperApp(recorder)
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        dataSender.registerListener()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        dataSender.unregisterListener()
     }
 
     override fun onDestroy() {
@@ -151,37 +143,37 @@ class WearMainActivity : ComponentActivity() {
 
 @Composable
 fun WearWhisperApp(
-    recorder: WearAudioRecorder,
-    dataSender: WatchDataSender,
-    settings: WearSettings
+    recorder: WearAudioRecorder
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var watchState by remember { mutableStateOf(WatchState.IDLE) }
+    var elapsedSeconds by remember { mutableIntStateOf(0) }
+    var permissionStart by remember { mutableStateOf(false) }
     var amplitude by remember { mutableFloatStateOf(0f) }
     var resultText by remember { mutableStateOf("") }
     var liveText by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf("") }
-    var isConnected by remember { mutableStateOf(false) }
     var hasMicPermission by remember { mutableStateOf(false) }
 
-    val useDirectGpu by settings.useDirectGpu.collectAsState(initial = false)
-    val serverUrl by settings.serverUrl.collectAsState(initial = WearSettings.DEFAULT_SERVER_URL)
-    val language by settings.language.collectAsState(initial = WearSettings.DEFAULT_LANGUAGE)
-
     val amplitudeHistory = remember { mutableStateListOf<Float>() }
-    val whisperApi = remember(serverUrl) { WearWhisperApi(serverUrl) }
 
-    // Live transcription chunking
-    var chunkCounter by remember { mutableIntStateOf(0) }
+    DisposableEffect(watchState) {
+        val window = (context as? ComponentActivity)?.window
+        if (watchState == WatchState.RECORDING) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasMicPermission = granted
+        permissionStart = granted
         if (!granted) {
-            errorText = "Mic permission required"
+            errorText = context.getString(R.string.error_mic_permission)
             watchState = WatchState.ERROR
         }
     }
@@ -191,53 +183,9 @@ fun WearWhisperApp(
                 android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
-    LaunchedEffect(useDirectGpu) {
-        while (true) {
-            isConnected = if (useDirectGpu) {
-                try { whisperApi.checkHealth() } catch (_: Exception) { false }
-            } else {
-                dataSender.hasConnectedPhone()
-            }
-            delay(5_000)
-        }
-    }
-
-    DisposableEffect(Unit) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context?, intent: Intent?) {
-                val path = intent?.getStringExtra(WatchMessageReceiver.EXTRA_PATH) ?: return
-                val data = intent.getByteArrayExtra(WatchMessageReceiver.EXTRA_DATA) ?: return
-                when (path) {
-                    PATH_RESULT -> {
-                        resultText = String(data, Charsets.UTF_8)
-                        watchState = WatchState.RESULT
-                        vibrateSuccess(context)
-                    }
-                    PATH_ERROR -> {
-                        errorText = String(data, Charsets.UTF_8)
-                        watchState = WatchState.ERROR
-                        vibrateError(context)
-                    }
-                    PATH_STATUS -> {
-                        if (!useDirectGpu) {
-                            isConnected = String(data, Charsets.UTF_8) != "offline"
-                        }
-                    }
-                }
-            }
-        }
-        val filter = IntentFilter(WatchMessageReceiver.ACTION_WHISPER_MESSAGE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(receiver, filter)
-        }
-        onDispose { context.unregisterReceiver(receiver) }
-    }
-
     LaunchedEffect(watchState) {
         if (watchState == WatchState.RESULT || watchState == WatchState.ERROR) {
-            delay(10_000)
+            delay(1_500)
             if (watchState == WatchState.RESULT || watchState == WatchState.ERROR) {
                 watchState = WatchState.IDLE
                 resultText = ""
@@ -253,24 +201,12 @@ fun WearWhisperApp(
         }
     }
 
-    // Live transcription loop - send chunks every 2.5s while recording
     LaunchedEffect(watchState) {
-        if (watchState == WatchState.RECORDING && useDirectGpu) {
-            delay(2000) // Initial delay
-            while (watchState == WatchState.RECORDING) {
-                val wavBytes = recorder.getIntermediateWav()
-                if (wavBytes != null && wavBytes.size > 5000) {
-                    chunkCounter++
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            val response = whisperApi.transcribe(wavBytes, language)
-                            if (response.success && !response.text.isNullOrBlank()) {
-                                liveText = response.text
-                            }
-                        } catch (_: Exception) {}
-                    }
-                }
-                delay(2500) // Chunk interval
+        if (watchState == WatchState.RECORDING) {
+            val started = SystemClock.elapsedRealtime()
+            while (true) {
+                elapsedSeconds = ((SystemClock.elapsedRealtime() - started) / 1000).toInt()
+                delay(200)
             }
         }
     }
@@ -278,26 +214,36 @@ fun WearWhisperApp(
     val onRecord: () -> Unit = {
         when (watchState) {
             WatchState.IDLE, WatchState.RESULT, WatchState.ERROR -> {
-                if (!hasMicPermission) {
+                if (recorder.hasPendingAudio) {
+                    watchState = WatchState.SENDING
+                    scope.launch {
+                        finishRecording(recorder, context) { s, t, e ->
+                            watchState = s
+                            if (t != null) resultText = t
+                            if (e != null) errorText = e
+                        }
+                    }
+                } else if (!hasMicPermission) {
                     permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                } else if (!isConnected) {
-                    errorText = if (useDirectGpu) "GPU offline" else "Phone not reachable"
-                    watchState = WatchState.ERROR
-                    vibrateError(context)
                 } else {
                     watchState = WatchState.RECORDING
+                    elapsedSeconds = 0
                     resultText = ""
                     liveText = ""
                     errorText = ""
                     amplitudeHistory.clear()
-                    chunkCounter = 0
                     vibrateStart(context)
-                    scope.launch(Dispatchers.Default) {
+                    scope.launch {
                         recorder.startRecording(
                             onAmplitudeUpdate = { amplitude = it },
+                            onError = {
+                                errorText = context.getString(R.string.error_recording)
+                                watchState = WatchState.ERROR
+                                vibrateError(context)
+                            },
                             onAutoStop = {
                                 scope.launch {
-                                    finishRecording(recorder, dataSender, whisperApi, context, useDirectGpu, language) { s, t, e ->
+                                    finishRecording(recorder, context) { s, t, e ->
                                         watchState = s
                                         if (t != null) resultText = t
                                         if (e != null) errorText = e
@@ -306,7 +252,7 @@ fun WearWhisperApp(
                             },
                             onMaxDuration = {
                                 scope.launch {
-                                    finishRecording(recorder, dataSender, whisperApi, context, useDirectGpu, language) { s, t, e ->
+                                    finishRecording(recorder, context) { s, t, e ->
                                         watchState = s
                                         if (t != null) resultText = t
                                         if (e != null) errorText = e
@@ -318,9 +264,10 @@ fun WearWhisperApp(
                 }
             }
             WatchState.RECORDING -> {
+                watchState = WatchState.SENDING
                 vibrateStop(context)
                 scope.launch {
-                    finishRecording(recorder, dataSender, whisperApi, context, useDirectGpu, language) { s, t, e ->
+                    finishRecording(recorder, context) { s, t, e ->
                         watchState = s
                         if (t != null) resultText = t
                         if (e != null) errorText = e
@@ -331,10 +278,10 @@ fun WearWhisperApp(
         }
     }
 
-    val onToggleMode: () -> Unit = {
-        if (watchState == WatchState.IDLE || watchState == WatchState.RESULT || watchState == WatchState.ERROR) {
-            scope.launch { settings.setUseDirectGpu(!useDirectGpu) }
-            vibrateStart(context)
+    LaunchedEffect(permissionStart) {
+        if (permissionStart) {
+            permissionStart = false
+            onRecord()
         }
     }
 
@@ -365,9 +312,8 @@ fun WearWhisperApp(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxSize().padding(12.dp)
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp)
                 ) {
-                    Spacer(Modifier.height(32.dp))
 
                     RecordButton(
                         watchState = watchState,
@@ -382,40 +328,37 @@ fun WearWhisperApp(
                         WatchState.RECORDING -> {
                             WaveformVisualizer(
                                 amplitudes = amplitudeHistory,
-                                modifier = Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 8.dp)
+                                modifier = Modifier.fillMaxWidth().height(24.dp).padding(horizontal = 8.dp)
                             )
                             Spacer(Modifier.height(6.dp))
                             // Show live transcription if available
                             if (liveText.isNotEmpty()) {
                                 LiveTextPill(text = liveText)
                             } else {
-                                Text("Listening…", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text(stringResource(R.string.recording_timer, elapsedSeconds / 60, elapsedSeconds % 60), color = Amber, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
                         WatchState.SENDING -> {
                             PulsingDots()
                             Spacer(Modifier.height(4.dp))
-                            Text("Sending…", color = TextGray, fontSize = 12.sp)
+                            Text(stringResource(R.string.saving), color = TextGray, fontSize = 12.sp)
                         }
                         WatchState.TRANSCRIBING -> {
                             PulsingDots()
                             Spacer(Modifier.height(4.dp))
-                            Text(if (useDirectGpu) "Processing…" else "Transcribing…", color = Amber.copy(alpha = 0.8f), fontSize = 12.sp)
+                            Text(stringResource(R.string.transcribing), color = Amber.copy(alpha = 0.8f), fontSize = 12.sp)
                         }
                         WatchState.RESULT -> {
-                            ResultCard(text = resultText)
+                            Text(resultText, color = Emerald, fontSize = 12.sp)
                         }
                         WatchState.ERROR -> {
                             ErrorCard(text = errorText)
                         }
                         WatchState.IDLE -> {
-                            Text("Tap to record", color = TextMuted, fontSize = 12.sp)
+                            Text(stringResource(R.string.tap_to_record), color = TextMuted, fontSize = 12.sp)
                         }
                     }
 
-                    Spacer(Modifier.weight(1f))
-
-                    ModeIndicator(useDirectGpu, isConnected, onToggleMode)
 
                     Spacer(Modifier.height(6.dp))
                 }
@@ -433,19 +376,18 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
     val isRecording = watchState == WatchState.RECORDING
     val isBusy = watchState == WatchState.SENDING || watchState == WatchState.TRANSCRIBING
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulse by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
-    )
-    val ringAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.2f, targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "ring"
-    )
+    val pulse = if (isRecording) {
+        val transition = rememberInfiniteTransition(label = "recordingPulse")
+        val value by transition.animateFloat(
+            initialValue = 1f, targetValue = 1.08f,
+            animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "pulse"
+        )
+        value
+    } else 1f
+    val scale = pulse
+    val ringAlpha = if (isRecording) 0.4f else 0f
 
-    val scale = if (isRecording) pulse else 1f
     val buttonColor = when {
         isRecording -> Amber
         isBusy -> AmberDim.copy(alpha = 0.5f)
@@ -466,14 +408,22 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
 
         Button(
             onClick = onClick,
-            modifier = Modifier.size((56 * scale).dp),
+            modifier = Modifier.size((64 * scale).dp),
             colors = ButtonDefaults.buttonColors(backgroundColor = buttonColor, contentColor = DeepNoir),
             shape = CircleShape,
             enabled = !isBusy
         ) {
             Icon(
-                imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                contentDescription = null,
+                imageVector = when {
+                    isRecording -> Icons.Default.Stop
+                    watchState == WatchState.ERROR -> Icons.Default.Refresh
+                    else -> Icons.Default.Mic
+                },
+                contentDescription = stringResource(when {
+                    isRecording -> R.string.stop
+                    watchState == WatchState.ERROR -> R.string.retry
+                    else -> R.string.tap_to_record
+                }),
                 modifier = Modifier.size(26.dp),
                 tint = if (isRecording) DeepNoir else TextWhite
             )
@@ -674,43 +624,28 @@ private fun ModeIndicator(useDirectGpu: Boolean, connected: Boolean, onClick: ()
 
 private suspend fun finishRecording(
     recorder: WearAudioRecorder,
-    dataSender: WatchDataSender,
-    whisperApi: WearWhisperApi,
     context: Context,
-    useDirectGpu: Boolean,
-    language: String,
     onStateChange: (WatchState, String?, String?) -> Unit
 ) {
-    val wavBytes = recorder.stopAndGetWav()
-    if (wavBytes == null || wavBytes.isEmpty()) {
-        onStateChange(WatchState.ERROR, null, "No speech detected")
-        vibrateError(context)
-        return
-    }
-
-    Log.d(TAG, "WAV: ${wavBytes.size} bytes, mode=${if (useDirectGpu) "DIRECT" else "RELAY"}")
     onStateChange(WatchState.SENDING, null, null)
-    delay(100)
-    onStateChange(WatchState.TRANSCRIBING, null, null)
-
-    if (useDirectGpu) {
-        val response = whisperApi.transcribe(wavBytes, language)
-        if (response.success && !response.text.isNullOrBlank()) {
-            onStateChange(WatchState.RESULT, response.text, null)
-            vibrateSuccess(context)
-        } else {
-            onStateChange(WatchState.ERROR, null, response.error ?: "Empty transcription")
+    try {
+        val wavBytes = recorder.stopAndGetWav()
+        if (wavBytes == null) {
+            onStateChange(WatchState.ERROR, null, context.getString(R.string.no_speech))
             vibrateError(context)
+            return
         }
-    } else {
-        val response = dataSender.sendAudioAndAwaitResult(wavBytes, language)
-        if (response.success && !response.text.isNullOrBlank()) {
-            onStateChange(WatchState.RESULT, response.text, null)
-            vibrateSuccess(context)
-        } else {
-            onStateChange(WatchState.ERROR, null, response.error ?: "Empty transcription")
-            vibrateError(context)
-        }
+        // Phase 1: persist first. Legacy transcription is not a durable delivery ACK.
+        withContext(Dispatchers.IO) { PendingRecordingStore(context).save(wavBytes) }
+        recorder.confirmSaved()
+        onStateChange(WatchState.RESULT, context.getString(R.string.saved), null)
+        vibrateSuccess(context)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.e(TAG, "Unable to finalize recording", error)
+        onStateChange(WatchState.ERROR, null, context.getString(R.string.error_save))
+        vibrateError(context)
     }
 }
 

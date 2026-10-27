@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="app_name">WhisperFlow</string>
+  <string name="tap_to_record">Record</string>
+  <string name="stop">Stop</string>
+  <string name="retry">Retry</string>
+  <string name="recording_timer">Recording %1$02d:%2$02d</string>
+  <string name="saving">Saving…</string>
+  <string name="saved">✓ Saved</string>
+  <string name="transcribing">Transcribing…</string>
+  <string name="no_speech">No audio to save</string>
+  <string name="error_mic_permission">Allow microphone access</string>
+  <string name="error_recording">Unable to record audio</string>
+  <string name="error_save">Unable to save recording</string>
+</resources>
