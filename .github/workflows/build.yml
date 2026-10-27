@@ -47,8 +47,14 @@ jobs:
               -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
       - name: Run unit tests
+        # Hosted Linux runners can otherwise resolve the Android user directory to
+        # ~/.config/.android, while the persistent signing cache is in ~/.android.
+        env:
+          ANDROID_USER_HOME: /home/runner/.android
         run: ./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest --no-daemon
       - name: Build phone and watch from the same commit
+        env:
+          ANDROID_USER_HOME: /home/runner/.android
         run: ./gradlew :app:assembleRelease :wear:assembleRelease --no-daemon
       - name: Verify common phone and watch application ID
         run: bash tools/verify-apk-pair.sh identity
