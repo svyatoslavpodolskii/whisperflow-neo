@@ -49,6 +49,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Refresh
@@ -113,7 +114,7 @@ private val Emerald = Color(0xFF00C77B)
 private val CoralRed = Color(0xFFFF4444)
 
 enum class WatchState {
-    IDLE, RECORDING, SENDING, TRANSCRIBING, RESULT, ERROR
+    IDLE, STARTING, RECORDING, SENDING, TRANSCRIBING, RESULT, ERROR
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -159,7 +160,7 @@ fun WearWhisperApp(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var watchState by remember { mutableStateOf(WatchState.IDLE) }
+    var watchState by remember { mutableStateOf(if (startImmediately) WatchState.STARTING else WatchState.IDLE) }
     var elapsedSeconds by remember { mutableIntStateOf(0) }
     var permissionStart by remember { mutableStateOf(false) }
     var amplitude by remember { mutableFloatStateOf(0f) }
@@ -169,7 +170,11 @@ fun WearWhisperApp(
     var hasMicPermission by remember { mutableStateOf(false) }
 
     val amplitudeHistory = remember { mutableStateListOf<Float>() }
-    val pending by remember { PendingRecordingStore(context.applicationContext).entries }.collectAsState(initial = emptyList())
+    val pendingFlow = remember(watchState) {
+        if (watchState == WatchState.RECORDING || watchState == WatchState.STARTING) kotlinx.coroutines.flow.flowOf(emptyList<PendingRecordingStore.Entry>())
+        else PendingRecordingStore(context.applicationContext).entries
+    }
+    val pending by pendingFlow.collectAsState(initial = emptyList())
 
     DisposableEffect(watchState) {
         val window = (context as? ComponentActivity)?.window
@@ -206,13 +211,6 @@ fun WearWhisperApp(
         }
     }
 
-    LaunchedEffect(amplitude) {
-        if (watchState == WatchState.RECORDING) {
-            amplitudeHistory.add(amplitude)
-            if (amplitudeHistory.size > 24) amplitudeHistory.removeAt(0)
-        }
-    }
-
     LaunchedEffect(watchState) {
         if (watchState == WatchState.RECORDING) {
             val started = SystemClock.elapsedRealtime()
@@ -225,7 +223,7 @@ fun WearWhisperApp(
 
     val onRecord: () -> Unit = {
         when (watchState) {
-            WatchState.IDLE, WatchState.RESULT, WatchState.ERROR -> {
+            WatchState.IDLE, WatchState.RESULT, WatchState.ERROR, WatchState.STARTING -> {
                 if (recorder.hasPendingAudio) {
                     watchState = WatchState.SENDING
                     scope.launch {
@@ -238,16 +236,16 @@ fun WearWhisperApp(
                 } else if (!hasMicPermission) {
                     permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 } else {
-                    watchState = WatchState.RECORDING
+                    watchState = WatchState.STARTING
                     elapsedSeconds = 0
                     resultText = ""
                     liveText = ""
                     errorText = ""
                     amplitudeHistory.clear()
-                    vibrateStart(context)
                     scope.launch {
                         recorder.startRecording(
                             onAmplitudeUpdate = { amplitude = it },
+                            onStarted = { watchState = WatchState.RECORDING; vibrateStart(context) },
                             autoStopOnSilence = WearCapturePreferences(context).autoStop,
                             silenceTimeoutMs = WearCapturePreferences(context).silenceSeconds * 1000L,
                             onError = {
@@ -293,11 +291,11 @@ fun WearWhisperApp(
     }
 
     LaunchedEffect(startImmediately, launchGeneration) {
-        if (startImmediately && watchState == WatchState.IDLE) onRecord()
+        if (startImmediately && (watchState == WatchState.IDLE || watchState == WatchState.STARTING)) onRecord()
     }
     LaunchedEffect(Unit) {
         delay(500)
-        if (watchState != WatchState.RECORDING) CaptureSyncWorker.enqueue(context.applicationContext)
+        if (watchState != WatchState.RECORDING && watchState != WatchState.STARTING) CaptureSyncWorker.enqueue(context.applicationContext)
     }
 
     LaunchedEffect(permissionStart) {
@@ -306,6 +304,10 @@ fun WearWhisperApp(
             onRecord()
         }
     }
+
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val reveal = animateFloatAsState(if (appeared) 1f else 0f, tween(220), label = "captureReveal")
 
     // ═══════════════════════════════════════════════════════════════════════════
     // UI
@@ -334,12 +336,13 @@ fun WearWhisperApp(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)
+                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = reveal.value }
+                        .padding(horizontal = 24.dp, vertical = 20.dp)
                 ) {
 
                     RecordButton(
                         watchState = watchState,
-                        amplitude = amplitude,
+                        level = { amplitude },
                         onClick = onRecord
                     )
 
@@ -348,17 +351,16 @@ fun WearWhisperApp(
                     // Status content
                     when (watchState) {
                         WatchState.RECORDING -> {
-                            WaveformVisualizer(
-                                amplitudes = amplitudeHistory,
-                                modifier = Modifier.fillMaxWidth().height(24.dp).padding(horizontal = 8.dp)
-                            )
-                            Spacer(Modifier.height(6.dp))
+
                             // Show live transcription if available
                             if (liveText.isNotEmpty()) {
                                 LiveTextPill(text = liveText)
                             } else {
                                 Text(stringResource(R.string.recording_timer, elapsedSeconds / 60, elapsedSeconds % 60), color = Amber, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
+                        }
+                        WatchState.STARTING -> {
+                            Text(stringResource(R.string.preparing_recording), color = TextGray, fontSize = 12.sp)
                         }
                         WatchState.SENDING -> {
                             PulsingDots()
@@ -405,42 +407,33 @@ fun WearWhisperApp(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -> Unit) {
+internal fun RecordButton(watchState: WatchState, level: () -> Float = { 0f }, onClick: () -> Unit) {
     val isRecording = watchState == WatchState.RECORDING
-    val isBusy = watchState == WatchState.SENDING || watchState == WatchState.TRANSCRIBING
+    val isBusy = watchState == WatchState.SENDING || watchState == WatchState.TRANSCRIBING || watchState == WatchState.STARTING
 
-    val transition = if (isRecording) rememberInfiniteTransition(label = "recordingPulse") else null
-    val pulse = transition?.animateFloat(
-        initialValue = 1f, targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
-    )
     val ringAlpha = if (isRecording) 0.4f else 0f
 
     val buttonColor = when {
-        isRecording -> Amber
+        isRecording -> Color.Transparent
+        watchState == WatchState.STARTING -> Color.Transparent
         isBusy -> AmberDim.copy(alpha = 0.5f)
         else -> Amber
     }
 
     Box(Modifier.size(80.dp), contentAlignment = Alignment.Center) {
-        // Outer ring when recording
-        if (isRecording) {
+        if (isRecording || watchState == WatchState.STARTING) {
             Canvas(Modifier.size(80.dp)) {
-                drawCircle(
-                    color = Amber.copy(alpha = ringAlpha * 0.4f),
-                    radius = size.minDimension / 2f,
-                    style = Stroke(width = 3.dp.toPx())
-                )
+                val strength = if (isRecording) (level() * 2f).coerceIn(0f, 1f) else 0f
+                val radius = size.minDimension * (.34f + strength * .12f)
+                drawCircle(Amber.copy(alpha = .08f + strength * .14f), radius)
+                drawCircle(Amber.copy(alpha = if (isRecording) .55f + strength * .45f else .2f),
+                    radius, style = Stroke(width = 2.dp.toPx()))
             }
         }
 
         Button(
             onClick = onClick,
-            modifier = Modifier.size(64.dp).graphicsLayer {
-                val scale = pulse?.value ?: 1f
-                scaleX = scale; scaleY = scale
-            },
+            modifier = Modifier.size(64.dp),
             colors = ButtonDefaults.buttonColors(backgroundColor = buttonColor, contentColor = DeepNoir),
             shape = CircleShape,
             enabled = !isBusy
@@ -448,89 +441,18 @@ private fun RecordButton(watchState: WatchState, amplitude: Float, onClick: () -
             Icon(
                 imageVector = when {
                     isRecording -> Icons.Default.Stop
+                    watchState == WatchState.STARTING -> Icons.Default.MoreHoriz
                     watchState == WatchState.ERROR -> Icons.Default.Refresh
                     else -> Icons.Default.Mic
                 },
                 contentDescription = stringResource(when {
                     isRecording -> R.string.stop
+                    watchState == WatchState.STARTING -> R.string.preparing_recording
                     watchState == WatchState.ERROR -> R.string.retry
                     else -> R.string.tap_to_record
                 }),
                 modifier = Modifier.size(26.dp),
-                tint = if (isBusy) TextGray else DeepNoir
-            )
-        }
-    }
-}
-
-@Composable
-private fun WaveformVisualizer(amplitudes: List<Float>, modifier: Modifier = Modifier) {
-    val barCount = 24
-    val infiniteTransition = rememberInfiniteTransition(label = "idle")
-    val idlePhase = infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 6.28f,
-        animationSpec = infiniteRepeatable(tween(2500, easing = LinearEasing), RepeatMode.Restart),
-        label = "phase"
-    )
-
-    // Center-out display: newest samples in center, older on edges
-    val halfBars = barCount / 2
-    val recentAmps = if (amplitudes.size >= halfBars) amplitudes.takeLast(halfBars) else amplitudes
-    // Lower boost for better sensitivity - raw amplitude is 0-1, we want subtle movements
-    val boosted = recentAmps.map { (it * 2.5f).coerceIn(0f, 1f) }
-    // Require higher threshold to detect real audio vs silence
-    val hasAudio = boosted.isNotEmpty() && boosted.any { it > 0.15f }
-
-    Canvas(modifier) {
-        val totalWidth = size.width * 0.9f
-        val startX = (size.width - totalWidth) / 2f
-        val barWidth = totalWidth / (barCount * 1.6f)
-        val gap = barWidth * 0.6f
-        val centerY = size.height / 2f
-        val centerX = size.width / 2f
-
-        for (i in 0 until barCount) {
-            // Map bar index to amplitude: center bars = newest, edge bars = older
-            val distFromCenter = kotlin.math.abs(i - halfBars)
-
-            val amp = if (hasAudio && boosted.isNotEmpty()) {
-                val ampIndex = (halfBars - 1 - distFromCenter).coerceIn(0, boosted.size - 1)
-                // Don't force minimum - let quiet be quiet
-                boosted[ampIndex]
-            } else {
-                // Idle wave animation - gentle breathing
-                val phase = idlePhase.value + i * 0.28f
-                (kotlin.math.sin(phase) * 0.06f + 0.08f).toFloat()
-            }
-
-            // Scale bar height - minimum 3dp, max 85% of height
-            val barHeight = (amp * size.height * 0.85f).coerceAtLeast(3f)
-            val x = startX + i * (barWidth + gap)
-
-            val color = if (!hasAudio) AmberDim.copy(alpha = 0.2f)
-            else when {
-                amp > 0.7f -> AmberLight
-                amp > 0.5f -> Amber
-                amp > 0.3f -> AmberDim.copy(alpha = 0.9f)
-                amp > 0.15f -> AmberDim.copy(alpha = 0.6f)
-                else -> AmberDim.copy(alpha = 0.3f)
-            }
-
-            // Glow for high amplitude only
-            if (hasAudio && amp > 0.5f) {
-                drawRoundRect(
-                    color = Amber.copy(alpha = amp * 0.25f),
-                    topLeft = Offset(x - 1f, centerY - barHeight / 2f - 2f),
-                    size = Size(barWidth + 2f, barHeight + 4f),
-                    cornerRadius = CornerRadius(barWidth, barWidth)
-                )
-            }
-
-            drawRoundRect(
-                color = color,
-                topLeft = Offset(x, centerY - barHeight / 2f),
-                size = Size(barWidth, barHeight),
-                cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
+                tint = if (isRecording) Amber else if (isBusy) TextGray else DeepNoir
             )
         }
     }

@@ -20,6 +20,7 @@ class NoteVaultSyncWorker(context: Context, params: WorkerParameters) : Coroutin
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val notes = MarkdownNotes.get(applicationContext)
         try {
+            notes.pruneTrash()
             for (row in AudioInboxRepository.get(applicationContext).list()) {
                 notes.materialize(row.id, row.createdAt, row.transcription, "WATCH", row.audioPath)
             }
@@ -57,15 +58,11 @@ class NoteVaultSyncWorker(context: Context, params: WorkerParameters) : Coroutin
                         ?: documents[note.fileName]
                     if (note.deleted) {
                         if (remote != null && remote.delete()) documents.entries.removeAll { it.value.uri == remote.uri }
+                        if (note.deleteAudio && note.recordingId != null) root.findFile("attachments")?.findFile(note.recordingId + ".wav")?.delete()
                         continue
                     }
                     val localText = notes.read(note.id)
                     val localHash = CaptureProtocol.sha256(localText.toByteArray(Charsets.UTF_8))
-                    if (remote == null && note.documentUri != null && note.syncedHash != null) {
-                        if (localHash != note.syncedHash) notes.conflict(note.id, localText)
-                        notes.delete(note.id) // External deletion is reversible: private Markdown remains in trash.
-                        continue
-                    }
                     val remoteText = remote?.let { read(it) }
                     val remoteHash = remoteText?.let { CaptureProtocol.sha256(it.toByteArray(Charsets.UTF_8)) }
                     when (decideNoteSync(localHash, remoteHash, note.syncedHash)) {

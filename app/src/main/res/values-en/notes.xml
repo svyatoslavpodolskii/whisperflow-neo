@@ -22,7 +22,7 @@
     <string name="notes_save">Save</string>
     <string name="notes_markdown">Markdown</string>
     <string name="notes_delete">Delete note</string>
-    <string name="notes_delete_hint">Delete the note from the list and selected folder? Original audio stays in recording history; a private note copy remains in app trash.</string>
+    <string name="notes_delete_hint">Move this note to trash? Restoring the note does not restore deleted audio.</string>
     <string name="notes_cancel">Cancel</string>
     <string name="notes_load_error">Cannot open note</string>
     <string name="notes_save_error">Cannot save. Your text is still in the editor.</string>

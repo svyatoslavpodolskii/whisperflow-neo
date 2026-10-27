@@ -1,0 +1,16 @@
+<resources>
+    <string name="notes_internal_storage">App storage</string>
+    <string name="notes_internal_short">Local · Neo only</string>
+    <string name="notes_shared_short">Shared Markdown folder</string>
+    <string name="notes_internal_explanation">Notes currently live in Neo private storage, not in Documents. Obsidian cannot access it. Choose a shared folder, for example Documents/WhisperFlow Neo, then open that folder as an Obsidian vault.</string>
+    <string name="notes_storage">Note storage</string>
+    <string name="notes_choose_folder">Choose shared folder</string>
+    <string name="notes_actions">Note actions</string>
+    <string name="notes_count">Notes: %1$d</string>
+    <string name="notes_trash_empty">Trash is empty</string>
+    <string name="notes_close">Close</string>
+    <string name="notes_delete_audio">Also delete the audio recording</string>
+    <string name="notes_remove_audio">Delete audio</string>
+    <string name="notes_retention">Delete permanently after %1$d days · change</string>
+    <string name="notes_delete_together">The note and audio will stay in trash for %1$d days, then both files will be permanently deleted.</string>
+</resources>

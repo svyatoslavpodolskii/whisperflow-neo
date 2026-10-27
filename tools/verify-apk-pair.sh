@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-phone=app/build/outputs/apk/debug/whisperflow-debug.apk
-watch=wear/build/outputs/apk/debug/whisperflow-wear-debug.apk
+phone=app/build/outputs/apk/release/whisperflow-release.apk
+watch=wear/build/outputs/apk/release/whisperflow-wear-release.apk
 android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 test -n "$android_sdk"
 # Match AGP's build tools, rather than whichever preview SDK happens to be newest
@@ -27,11 +27,11 @@ test "$phone_cert" = "$watch_cert"
 fi
 if [ "$phase" = all ] || [ "$phase" = launcher ]; then
 watch_badging="$($aapt dump badging "$watch")"
-$aapt dump xmltree "$watch" AndroidManifest.xml > wear/build/outputs/apk/debug/wear-manifest.txt
+$aapt dump xmltree "$watch" AndroidManifest.xml > wear/build/outputs/apk/release/wear-manifest.txt
 printf '%s\n' "$watch_badging" | grep '^launchable-activity:' | grep -q "name='com.pimax.whisperflow.wear.WearMainActivity'"
 fi
 if [ "$phase" != all ]; then exit 0; fi
 {
   printf 'Commit: %s\nApplication ID (both): %s\nSigning SHA256 (both): %s\n' "${GITHUB_SHA:-local}" "$phone_id" "$phone_cert"
   sha256sum "$phone" "$watch"
-} | tee app/build/outputs/apk/debug/build-identity.txt
+} | tee app/build/outputs/apk/release/build-identity.txt

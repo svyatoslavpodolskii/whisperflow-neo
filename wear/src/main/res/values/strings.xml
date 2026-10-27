@@ -21,4 +21,5 @@
   <string name="error_mic_permission">Разрешите доступ к микрофону</string>
   <string name="error_recording">Не удалось записать аудио</string>
   <string name="error_save">Не удалось сохранить запись</string>
+  <string name="preparing_recording">Подготовка микрофона…</string>
 </resources>

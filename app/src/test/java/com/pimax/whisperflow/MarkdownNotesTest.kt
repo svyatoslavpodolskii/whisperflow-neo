@@ -66,4 +66,58 @@ class MarkdownNotesTest {
         assertEquals(NoteSyncDecision.PULL, decideNoteSync("base", "remote", "base"))
         assertEquals(NoteSyncDecision.CONFLICT, decideNoteSync("local", "remote", "base"))
     }
+    @Test fun editingBodyHidesMetadataAndPreservesItInTheMarkdownFile() {
+        val id = UUID.randomUUID().toString()
+        val document = "---\nneo_id: $id\nsource: WATCH\n---\n\n# Мысль\n\n**Важно**\n\n[Аудиозапись](attachments/$id.wav)\n"
+        val body = MarkdownNotes.body(document)
+        assertEquals("# Мысль\n\n**Важно**", body)
+        val saved = MarkdownNotes.replaceBody(document, body + "\n\n- Следующий шаг", id)
+        assertTrue(saved.contains("source: WATCH"))
+        assertEquals(id, MarkdownNotes.embeddedId(saved))
+        assertTrue(saved.contains("attachments/$id.wav"))
+        assertTrue(MarkdownNotes.body(saved).contains("- Следующий шаг"))
+    }
+    @Test fun trashRestoresAudioAndPermanentlyDeletesBothAfterRetention() {
+        val repo = MarkdownNotes(context)
+        val audio = File(context.filesDir, "delete-test.wav").apply { writeBytes(byteArrayOf(1, 2)) }
+        val note = repo.create("# Test", audioPath = audio.absolutePath)
+        repo.delete(note.id, withAudio = true)
+        assertTrue(audio.exists())
+        assertTrue(repo.find(note.id)!!.deleteAudio)
+        assertTrue(repo.find(note.id)!!.deleted)
+        repo.restore(note.id)
+        assertFalse(repo.find(note.id)!!.deleted)
+        assertEquals(audio.absolutePath, repo.find(note.id)!!.audioPath)
+        assertEquals("# Test", MarkdownNotes.body(repo.read(note.id)))
+        repo.delete(note.id)
+        repo.pruneTrash(System.currentTimeMillis() + 31L * 86400000)
+        assertFalse(audio.exists())
+        assertTrue(repo.find(note.id)!!.deleted)
+        assertFalse(File(context.filesDir, "notes/" + note.id + ".md").exists())
+        repo.close()
+    }
+    @Test fun watchAudioIsHiddenAndRestoredWithItsNoteAndSevenDayRetentionWorks() {
+        val inbox = AudioInboxRepository.get(context)
+        inbox.close()
+        val bytes = java.nio.ByteBuffer.allocate(48).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(40); put("WAVEfmt ".toByteArray()); putInt(16)
+            putShort(1); putShort(1); putInt(16000); putInt(32000); putShort(2); putShort(16)
+            put("data".toByteArray()); putInt(4); putShort(1000); putShort(-1000)
+        }.array()
+        val id = UUID.randomUUID().toString()
+        val row = inbox.accept(id, 12345, bytes, com.pimax.whisperflow.sync.CaptureProtocol.sha256(bytes))
+        val repo = MarkdownNotes(context)
+        repo.materialize(id, 12345, "Текст", "WATCH", row.audioPath)
+        repo.delete(id)
+        assertTrue(inbox.find(id)!!.deleted)
+        assertTrue(File(row.audioPath).exists())
+        repo.restore(id)
+        assertFalse(inbox.find(id)!!.deleted)
+        repo.delete(id)
+        repo.retentionDays = 7
+        repo.pruneTrash(System.currentTimeMillis() + 8L * 86400000)
+        assertTrue(inbox.find(id)!!.deleted)
+        assertFalse(File(row.audioPath).exists())
+        repo.close()
+    }
 }

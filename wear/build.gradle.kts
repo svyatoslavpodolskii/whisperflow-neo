@@ -13,13 +13,13 @@ android {
         applicationId = "com.pimax.whisperflow"
         minSdk = 30 // Wear OS 3.0+
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.2-neo"
+        versionCode = 5
+        versionName = "1.3-neo"
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storeFile = signingConfigs.getByName("debug").storeFile
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"

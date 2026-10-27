@@ -22,7 +22,7 @@
     <string name="notes_save">Сохранить</string>
     <string name="notes_markdown">Markdown</string>
     <string name="notes_delete">Удалить заметку</string>
-    <string name="notes_delete_hint">Удалить заметку из списка и выбранной папки? Исходное аудио останется в истории записей, локальная копия заметки — в корзине приложения.</string>
+    <string name="notes_delete_hint">Переместить заметку в корзину? Восстановление заметки не восстанавливает удалённое аудио.</string>
     <string name="notes_cancel">Отмена</string>
     <string name="notes_load_error">Не удалось открыть заметку</string>
     <string name="notes_save_error">Не удалось сохранить. Текст остался в редакторе.</string>

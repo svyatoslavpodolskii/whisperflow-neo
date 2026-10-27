@@ -49,7 +49,7 @@ jobs:
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest --no-daemon
       - name: Build phone and watch from the same commit
-        run: ./gradlew :app:assembleDebug :wear:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleRelease :wear:assembleRelease --no-daemon
       - name: Verify common phone and watch application ID
         run: bash tools/verify-apk-pair.sh identity
       - name: Verify matching phone and watch signing certificates
@@ -67,29 +67,31 @@ jobs:
             app/build/reports/tests/
             wear/build/reports/tests/
             wear/build/reports/watch-launch.png
-            wear/build/outputs/apk/debug/wear-manifest.txt
-            app/build/outputs/apk/debug/build-identity.txt
+            wear/build/reports/watch-recording.png
+            app/build/reports/notes-list.png
+            wear/build/outputs/apk/release/wear-manifest.txt
+            app/build/outputs/apk/release/build-identity.txt
           retention-days: 14
       - name: Upload phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceMemory-Phone-debug
-          path: app/build/outputs/apk/debug/whisperflow-debug.apk
+          name: WhisperFlow-Neo-Phone
+          path: app/build/outputs/apk/release/whisperflow-release.apk
           if-no-files-found: error
           retention-days: 7
       - name: Upload watch APK
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceMemory-Wear-debug
-          path: wear/build/outputs/apk/debug/whisperflow-wear-debug.apk
+          name: WhisperFlow-Neo-Wear
+          path: wear/build/outputs/apk/release/whisperflow-wear-release.apk
           if-no-files-found: error
           retention-days: 7
       - name: Upload paired APKs
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceMemory-debug
+          name: WhisperFlow-Neo
           path: |
-            app/build/outputs/apk/debug/whisperflow-debug.apk
-            wear/build/outputs/apk/debug/whisperflow-wear-debug.apk
+            app/build/outputs/apk/release/whisperflow-release.apk
+            wear/build/outputs/apk/release/whisperflow-wear-release.apk
           if-no-files-found: error
           retention-days: 7

@@ -116,3 +116,21 @@
 -dontwarn java.lang.invoke.**
 -dontwarn javax.annotation.**
 -dontwarn sun.misc.Unsafe
+
+# Netty probes optional desktop TLS, logging and instrumentation providers at runtime.
+# The embedded Android server uses plain HTTP; none of these optional JARs are packaged.
+-dontwarn io.netty.internal.tcnative.**
+-dontwarn java.lang.management.ManagementFactory
+-dontwarn java.lang.management.RuntimeMXBean
+-dontwarn org.apache.log4j.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn org.bouncycastle.asn1.pkcs.PrivateKeyInfo
+-dontwarn org.bouncycastle.openssl.**
+-dontwarn org.bouncycastle.operator.InputDecryptorProvider
+-dontwarn org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo
+-dontwarn org.conscrypt.BufferAllocator
+-dontwarn org.conscrypt.Conscrypt
+-dontwarn org.conscrypt.HandshakeListener
+-dontwarn org.eclipse.jetty.npn.**
+-dontwarn org.slf4j.impl.StaticLoggerBinder
+-dontwarn reactor.blockhound.integration.BlockHoundIntegration

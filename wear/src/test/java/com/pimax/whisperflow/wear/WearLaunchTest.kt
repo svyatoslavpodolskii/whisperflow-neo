@@ -1,6 +1,8 @@
 package com.pimax.whisperflow.wear
 
 import android.content.Context
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -24,6 +26,46 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class WearLaunchTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun preparingControlDoesNotFlashAMicrophoneAction() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        compose.setContent { androidx.wear.compose.material.MaterialTheme {
+            RecordButton(WatchState.STARTING, onClick = {})
+        } }
+        compose.onNodeWithContentDescription(context.getString(R.string.tap_to_record)).assertDoesNotExist()
+        compose.onNodeWithContentDescription(context.getString(R.string.preparing_recording)).assertIsDisplayed()
+    }
+
+    @Test fun recordingIndicatorReactsToTheCurrentLevelAndOffersStop() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val level = androidx.compose.runtime.mutableFloatStateOf(0f)
+        compose.setContent { androidx.wear.compose.material.MaterialTheme {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0A0A0F)),
+                contentAlignment = androidx.compose.ui.Alignment.Center) {
+                RecordButton(WatchState.RECORDING, level = { level.floatValue }, onClick = {})
+            }
+        } }
+        compose.onNodeWithContentDescription(context.getString(R.string.stop)).assertIsDisplayed().assertHasClickAction()
+        fun render(): Bitmap {
+            val activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).single()
+            val root = activity.window.decorView
+            return Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888).also { root.draw(Canvas(it)) }
+        }
+        var quiet: Bitmap? = null
+        compose.runOnIdle { quiet = render(); level.floatValue = 1f }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            val loud = render()
+            var changed = 0
+            for (y in 0 until loud.height) for (x in 0 until loud.width) {
+                if (quiet!!.getPixel(x, y) != loud.getPixel(x, y)) changed++
+            }
+            assertTrue("Current voice level must change the rendered indicator", changed > 100)
+            val target = File("build/reports/watch-recording.png").apply { parentFile!!.mkdirs() }
+            target.outputStream().use { loud.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+    }
 
     @Test fun launchShowsVisibleClickableRecorderOnSmallRoundScreen() {
         val context: Context = ApplicationProvider.getApplicationContext()

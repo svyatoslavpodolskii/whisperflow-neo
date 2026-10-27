@@ -1,0 +1,16 @@
+<resources>
+    <string name="notes_internal_storage">Память приложения</string>
+    <string name="notes_internal_short">Локально · только в Neo</string>
+    <string name="notes_shared_short">Общая папка Markdown</string>
+    <string name="notes_internal_explanation">Сейчас заметки лежат в закрытой памяти Neo. Это не общая папка Documents, и Obsidian её не видит. Чтобы работать с одними файлами, выберите свою папку, например Documents/WhisperFlow Neo, и откройте её как хранилище в Obsidian.</string>
+    <string name="notes_storage">Хранилище заметок</string>
+    <string name="notes_choose_folder">Выбрать общую папку</string>
+    <string name="notes_actions">Действия с заметками</string>
+    <string name="notes_count">Заметок: %1$d</string>
+    <string name="notes_trash_empty">Корзина пуста</string>
+    <string name="notes_close">Закрыть</string>
+    <string name="notes_delete_audio">Также удалить аудиозапись</string>
+    <string name="notes_remove_audio">Удалить аудио</string>
+    <string name="notes_retention">Удалять окончательно через %1$d дней · изменить</string>
+    <string name="notes_delete_together">Заметка и аудио попадут в корзину на %1$d дней. После этого файлы будут удалены окончательно.</string>
+</resources>

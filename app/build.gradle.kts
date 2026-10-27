@@ -13,8 +13,8 @@ android {
         applicationId = "com.pimax.whisperflow"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.2-neo"
+        versionCode = 5
+        versionName = "1.3-neo"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -22,7 +22,7 @@ android {
     signingConfigs {
         create("release") {
             // Use debug keystore for now - replace with production keystore later
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storeFile = signingConfigs.getByName("debug").storeFile
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
@@ -78,6 +78,9 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("androidx.work:work-testing:2.9.1")
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    implementation(libs.androidx.compose.material.icons.extended)
     // Core Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

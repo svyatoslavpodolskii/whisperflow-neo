@@ -49,7 +49,7 @@ class PendingRecordingStore(context: Context) {
 
     /** Recover a WAV whose metadata write was interrupted; no polling or in-memory queue. */
     fun pending(): List<Entry> = synchronized(lock) {
-        spoolDirectory.listFiles { f -> f.extension == "pcm" }?.forEach { raw ->
+        spoolDirectory.listFiles { f -> f.extension in listOf("pcm", "aac") }?.forEach { raw ->
             val id = raw.nameWithoutExtension
             if (CaptureProtocol.validId(id) && !WearAudioRecorder.isSpoolActive(id)) {
                 try {
@@ -57,9 +57,11 @@ class PendingRecordingStore(context: Context) {
                     else {
                         val metadata = File(directory, "$id.json")
                         if (!metadata.exists()) {
-                            val bytes = raw.readBytes()
-                            // A torn final sample is unusable; preserve all complete PCM16 samples.
-                            save(WearWav.encode(bytes.copyOf(bytes.size - bytes.size % 2)), id)
+                            val wav = if (raw.extension == "aac") NativeCaptureDecoder.wav(raw) else {
+                                val bytes = raw.readBytes()
+                                WearWav.encode(bytes.copyOf(bytes.size - bytes.size % 2))
+                            }
+                            save(wav, id)
                         }
                         // Keep the journal until both WAV and metadata are durable.
                         raw.delete()

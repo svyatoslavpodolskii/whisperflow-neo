@@ -75,6 +75,11 @@ class NoteVaultSyncTest {
         assertTrue(external.readText().contains("Правка Neo"))
         assertEquals(2, provider.root.listFiles()!!.count { it.extension == "md" })
         assertTrue(notes.list().any { notes.read(it.id).contains("Одновременная внешняя правка") })
+        // A cloud/provider scan can temporarily omit a document. Never move the local note to trash.
+        external.delete()
+        sync()
+        assertFalse(notes.find(note.id)!!.deleted)
+        assertTrue(provider.root.listFiles()!!.any { it.extension == "md" && it.readText().contains("Правка Neo") })
     }
 }
 

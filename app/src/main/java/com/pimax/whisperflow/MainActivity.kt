@@ -2431,7 +2431,8 @@ fun HistoryTab(
     val inboxContext = LocalContext.current
     val inboxRepository = remember { AudioInboxRepository.get(inboxContext) }
     val inboxRows by inboxRepository.recordings.collectAsState(initial = emptyList())
-    val entries = remember(historyJson) {
+    val deletedNoteRecordings by remember { MarkdownNotes.get(inboxContext).deletedRecordingIds }.collectAsState(initial = emptySet())
+    val entries = remember(historyJson, deletedNoteRecordings) {
         try {
             val array = JSONArray(historyJson)
             (array.length() - 1 downTo 0).map { i ->
@@ -2445,6 +2446,8 @@ fun HistoryTab(
                     mode = if (obj.has("mode")) obj.getString("mode") else null,
                     sentToTasks = obj.optBoolean("sent_to_tasks", false)
                 )
+            }.filter { entry ->
+                java.util.UUID.nameUUIDFromBytes(("phone-history:" + entry.timestamp).toByteArray()).toString() !in deletedNoteRecordings
             }
         } catch (_: Exception) {
             emptyList()
@@ -3331,22 +3334,18 @@ fun SettingsTab(
     onOpenConnections: () -> Unit = {}
 ) {
     val languageContext = LocalContext.current
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(80)
-        isVisible = true
-    }
+    val isVisible = true
 
     Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = 24.dp, vertical = 20.dp)
             .statusBarsPadding()
     ) {
-        Spacer(Modifier.height(28.dp))
 
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400)) + slideInVertically(initialOffsetY = { -20 })
         ) {
@@ -3359,10 +3358,9 @@ fun SettingsTab(
             )
         }
 
-        Spacer(Modifier.height(20.dp))
 
         // Live Chunking Toggle
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 40)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3403,7 +3401,7 @@ fun SettingsTab(
         }
 
         // Inference Mode
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 60)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3444,10 +3442,9 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Local Model Settings (only visible in LOCAL mode)
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible && inferenceMode == "LOCAL",
             enter = fadeIn(tween(400, delayMillis = 80)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3612,7 +3609,7 @@ fun SettingsTab(
         }
 
         // Distributed STT Server
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 100)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3675,10 +3672,9 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // PI Server URL (GPU Server and LLM Gateway both derive from this)
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible && (inferenceMode == "GPU_SERVER" || inferenceMode == "LLM_GATEWAY"),
             enter = fadeIn(tween(400, delayMillis = 80)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3723,10 +3719,9 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Language
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 160)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3755,10 +3750,9 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Task
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 240)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3790,10 +3784,9 @@ fun SettingsTab(
 
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Assistant Settings
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 280)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -3898,10 +3891,9 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Hardware Buttons
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 320)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -4100,10 +4092,9 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Sound & Haptics
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 320)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -4199,10 +4190,9 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Transcription Tuning
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 320)) + slideInVertically(initialOffsetY = { 20 })
         ) {
@@ -4327,20 +4317,18 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(20.dp))
 
         // Save
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 400))
         ) {
             PrimaryButton(text = uiText(R.string.ui_save_settings), onClick = onSave)
         }
 
-        Spacer(Modifier.height(14.dp))
 
         // Info
-        AnimatedVisibility(
+        SettingsSection(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 400))
         ) {
@@ -4380,7 +4368,6 @@ fun SettingsTab(
             }
         }
 
-        Spacer(Modifier.height(32.dp))
     }
 }
 
@@ -4473,6 +4460,16 @@ fun BottomNavBar(tabs: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit
             }
         }
     }
+}
+
+// Settings are immediately laid out in their final order; conditional sections have no entrance delay.
+@Composable
+private fun SettingsSection(
+    visible: Boolean,
+    enter: androidx.compose.animation.EnterTransition,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    if (visible) Column(modifier = Modifier.fillMaxWidth(), content = content)
 }
 
 @Composable

@@ -102,6 +102,13 @@ class AudioInboxRepository internal constructor(private val context: Context) : 
         File(recording.audioPath).delete()
         changes.update { it + 1 }
     }
+    @Synchronized fun setTrashed(id: String, trashed: Boolean) {
+        val row = find(id) ?: return
+        if (row.deleted == trashed) return
+        if (!trashed && !File(row.audioPath).exists()) return
+        writableDatabase.update("recordings", ContentValues().apply { put("deleted", if (trashed) 1 else 0) }, "id=?", arrayOf(id))
+        changes.update { it + 1 }
+    }
 
     companion object {
         @Volatile private var instance: AudioInboxRepository? = null

@@ -24,7 +24,8 @@ import java.util.UUID
 
 data class MarkdownNote(val id: String, val title: String, val fileName: String, val createdAt: Long,
     val updatedAt: Long, val recordingId: String?, val audioPath: String?, val edited: Boolean,
-    val transcript: String, val documentUri: String?, val syncedHash: String?, val deleted: Boolean)
+    val transcript: String, val documentUri: String?, val syncedHash: String?, val deleted: Boolean,
+    val deleteAudio: Boolean = false, val deletedAt: Long? = null)
 
 enum class NoteSyncDecision { SAME, PUSH, PULL, CONFLICT }
 fun decideNoteSync(local: String, remote: String?, baseline: String?): NoteSyncDecision = when {
@@ -35,18 +36,22 @@ fun decideNoteSync(local: String, remote: String?, baseline: String?): NoteSyncD
 }
 
 /** Markdown files are the content; SQLite is a recoverable index and synchronization journal. */
-class MarkdownNotes internal constructor(private val context: Context) : SQLiteOpenHelper(context, "markdown_notes.db", null, 1) {
+class MarkdownNotes internal constructor(private val context: Context) : SQLiteOpenHelper(context, "markdown_notes.db", null, 3) {
     private val directory = File(context.filesDir, "notes").apply { check(isDirectory || mkdirs()) }
     private val changes = MutableStateFlow(0L)
     private val draftScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val draftVersions = mutableMapOf<String, Long>()
     private val draftCache = mutableMapOf<String, Pair<String, String>>()
     val notes = changes.map { list() }.flowOn(Dispatchers.IO)
-    val trash = changes.map { list(true).filter { it.deleted } }.flowOn(Dispatchers.IO)
+    val trash = changes.map { list(true).filter { it.deleted && File(directory, it.id + ".md").exists() } }.flowOn(Dispatchers.IO)
     val vault = changes.map { vaultUri }
     val status = changes.map { syncMessage }
+    val deletedRecordingIds = changes.map { list(true).filter { it.deleted }.mapNotNull { it.recordingId }.toSet() }.flowOn(Dispatchers.IO)
     private var recovered = false
     private val preferences = context.getSharedPreferences("markdown_vault", Context.MODE_PRIVATE)
+    var retentionDays: Int
+        get() = preferences.getInt("trash_days", 30)
+        set(value) { require(value == 7 || value == 30); preferences.edit().putInt("trash_days", value).commit(); changes.update { it + 1 } }
     var vaultUri: String?
         get() = preferences.getString("uri", null)
         @Synchronized set(value) {
@@ -62,9 +67,17 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
         db.execSQL("""CREATE TABLE notes(id TEXT PRIMARY KEY, title TEXT NOT NULL, fileName TEXT NOT NULL,
             createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, recordingId TEXT, audioPath TEXT,
             edited INTEGER NOT NULL DEFAULT 0, transcript TEXT NOT NULL DEFAULT '',
-            documentUri TEXT, syncedHash TEXT, deleted INTEGER NOT NULL DEFAULT 0)""")
+            documentUri TEXT, syncedHash TEXT, deleted INTEGER NOT NULL DEFAULT 0,
+            deleteAudio INTEGER NOT NULL DEFAULT 0, deletedAt INTEGER)""")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("ALTER TABLE notes ADD COLUMN deleteAudio INTEGER NOT NULL DEFAULT 0")
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE notes ADD COLUMN deletedAt INTEGER")
+            db.execSQL("UPDATE notes SET deletedAt=? WHERE deleted=1", arrayOf(System.currentTimeMillis()))
+            db.execSQL("UPDATE notes SET deleteAudio=1 WHERE deleted=1")
+        }
+    }
     fun read(id: String): String { require(CaptureProtocol.validId(id)); return File(directory, "$id.md").readText(Charsets.UTF_8) }
     fun hash(id: String): String = CaptureProtocol.sha256(read(id).toByteArray(Charsets.UTF_8))
     fun find(id: String): MarkdownNote? = readableDatabase.query("notes", null, "id=?", arrayOf(id), null, null, null).use { c ->
@@ -72,7 +85,8 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
             fun str(key: String) = c.getString(c.getColumnIndexOrThrow(key))
             fun long(key: String) = c.getLong(c.getColumnIndexOrThrow(key))
             MarkdownNote(str("id"), str("title"), str("fileName"), long("createdAt"), long("updatedAt"),
-                str("recordingId"), str("audioPath"), long("edited") != 0L, str("transcript"), str("documentUri"), str("syncedHash"), long("deleted") != 0L)
+                str("recordingId"), str("audioPath"), long("edited") != 0L, str("transcript"), str("documentUri"), str("syncedHash"), long("deleted") != 0L, long("deleteAudio") != 0L,
+                if (c.isNull(c.getColumnIndexOrThrow("deletedAt"))) null else long("deletedAt"))
         }
     }
     fun list(includeDeleted: Boolean = false): List<MarkdownNote> {
@@ -177,16 +191,42 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
     fun synced(id: String, uri: String, remoteHash: String) {
         writableDatabase.update("notes", ContentValues().apply { put("documentUri", uri); put("syncedHash", remoteHash) }, "id=?", arrayOf(id))
     }
-    fun delete(id: String) {
-        writableDatabase.update("notes", ContentValues().apply { put("deleted", 1) }, "id=?", arrayOf(id))
-        // Keep the private Markdown as a recoverable trash copy; never delete the original audio here.
+    @Synchronized fun delete(id: String, withAudio: Boolean = true) {
+        val note = find(id) ?: return
+        writableDatabase.update("notes", ContentValues().apply {
+            put("deleted", 1); put("deletedAt", System.currentTimeMillis())
+            if (withAudio) put("deleteAudio", 1)
+        }, "id=?", arrayOf(id))
+        if (withAudio) {
+            note.recordingId?.let { recording ->
+                AudioInboxRepository.get(context).setTrashed(recording, true)
+            }
+        }
         changes.update { it + 1 }
     }
     @Synchronized fun restore(id: String) {
+        val note = find(id) ?: return
+        if (!File(directory, "$id.md").exists()) return
         writableDatabase.update("notes", ContentValues().apply {
-            put("deleted", 0); putNull("documentUri"); putNull("syncedHash")
+            put("deleted", 0); put("deleteAudio", 0); putNull("deletedAt"); putNull("documentUri"); putNull("syncedHash")
             put("updatedAt", System.currentTimeMillis())
         }, "id=?", arrayOf(id))
+        note.recordingId?.let { AudioInboxRepository.get(context).setTrashed(it, false) }
+        changes.update { it + 1 }
+    }
+    @Synchronized fun pruneTrash(now: Long = System.currentTimeMillis()) {
+        val deadline = now - retentionDays * 86_400_000L
+        val deleted = list(true).filter { it.deleted }
+        deleted.forEach { note -> note.recordingId?.let { AudioInboxRepository.get(context).setTrashed(it, true) } }
+        deleted.filter { it.deletedAt != null && it.deletedAt <= deadline }.forEach { note ->
+            if (note.deleteAudio) {
+                note.recordingId?.let { AudioInboxRepository.get(context).delete(it) }
+                note.audioPath?.let { path -> val file = File(path); check(!file.exists() || file.delete()) }
+            }
+            File(directory, note.id + ".md").delete()
+            clearDraft(note.id)
+            writableDatabase.update("notes", ContentValues().apply { putNull("audioPath") }, "id=?", arrayOf(note.id))
+        }
         changes.update { it + 1 }
     }
     @Synchronized fun draft(id: String): Pair<String, String>? = draftCache[id] ?: runCatching {
@@ -230,6 +270,27 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
         @Volatile private var instance: MarkdownNotes? = null
         fun get(context: Context): MarkdownNotes = instance ?: synchronized(this) {
             instance ?: MarkdownNotes(context.applicationContext).also { instance = it }
+        }
+        /** Infrastructure metadata stays in the .md file, never in the user's editing surface. */
+        fun body(document: String): String {
+            val normalized = document.replace("\r\n", "\n")
+            val end = if (normalized.startsWith("---\n")) normalized.indexOf("\n---\n", 4) else -1
+            val body = if (end >= 0) normalized.substring(end + 5).trimStart('\n') else normalized
+            val visible = body.replace(Regex("(?m)^\\[Аудиозапись]\\(attachments/[0-9a-f-]{36}\\.wav\\)\\s*$"), "").trimEnd()
+            // Version 1.2 repeated the first transcript line as a generated heading.
+            if (end >= 0 && Regex("(?m)^source: (WATCH|PHONE)$").containsMatchIn(normalized.substring(0, end)) && visible.startsWith("# ")) {
+                val heading = visible.substringBefore('\n').removePrefix("# ")
+                val rest = visible.substringAfter('\n', "").trimStart()
+                if (rest.lineSequence().firstOrNull()?.take(90) == heading) return rest
+            }
+            return visible
+        }
+        fun replaceBody(document: String, body: String, id: String): String {
+            val normalized = document.replace("\r\n", "\n")
+            val end = if (normalized.startsWith("---\n")) normalized.indexOf("\n---\n", 4) else -1
+            val metadata = if (end >= 0) normalized.substring(0, end + 5) else ""
+            val attachment = Regex("(?m)^\\[Аудиозапись]\\(attachments/[0-9a-f-]{36}\\.wav\\)").find(normalized)?.value
+            return withNoteId(metadata + "\n" + body.trimEnd() + "\n" + (attachment?.let { "\n$it\n" } ?: ""), id)
         }
         fun embeddedId(text: String): String? {
             val normalized = text.replace("\r\n", "\n")
