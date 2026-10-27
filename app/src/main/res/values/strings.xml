@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">WhisperFlow: Neo</string>
+    <string name="brand_subtitle">FLOW: NEO</string>
     <string name="memory_watch_title">Записи с часов</string>
     <string name="memory_phone_apk_on_watch">Это APK для телефона. На часы установите VoiceMemory-Wear-debug — WhisperFlow: Neo.</string>
     <string name="memory_watch_source">ЧАСЫ</string>

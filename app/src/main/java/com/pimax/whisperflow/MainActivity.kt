@@ -1323,7 +1323,7 @@ fun RecordTab(
                     letterSpacing = 8.sp
                 )
                 Text(
-                    "FLOW",
+                    androidx.compose.ui.res.stringResource(R.string.brand_subtitle),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = Amber,
