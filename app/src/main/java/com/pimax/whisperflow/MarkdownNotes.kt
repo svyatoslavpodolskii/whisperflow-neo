@@ -191,6 +191,12 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
     fun synced(id: String, uri: String, remoteHash: String) {
         writableDatabase.update("notes", ContentValues().apply { put("documentUri", uri); put("syncedHash", remoteHash) }, "id=?", arrayOf(id))
     }
+    @Synchronized fun attachAudio(id: String, recordingId: String, audioPath: String, transcript: String) {
+        writableDatabase.update("notes", ContentValues().apply {
+            put("recordingId", recordingId); put("audioPath", audioPath); put("transcript", transcript)
+        }, "id=? AND deleted=0", arrayOf(id))
+        changes.update { it + 1 }
+    }
     @Synchronized fun delete(id: String, withAudio: Boolean = true) {
         val note = find(id) ?: return
         writableDatabase.update("notes", ContentValues().apply {

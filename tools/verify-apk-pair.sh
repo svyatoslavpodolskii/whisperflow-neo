@@ -24,6 +24,7 @@ phone_cert="$($signer verify --print-certs "$phone" | sed -n 's/^Signer #1 certi
 watch_cert="$($signer verify --print-certs "$watch" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
 test -n "$phone_cert"
 test "$phone_cert" = "$watch_cert"
+test "$phone_cert" = "$(tr -d '\r\n ' < tools/development-signing.sha256)"
 fi
 if [ "$phase" = all ] || [ "$phase" = launcher ]; then
 watch_badging="$($aapt dump badging "$watch")"

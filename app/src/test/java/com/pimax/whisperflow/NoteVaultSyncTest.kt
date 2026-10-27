@@ -80,6 +80,22 @@ class NoteVaultSyncTest {
         sync()
         assertFalse(notes.find(note.id)!!.deleted)
         assertTrue(provider.root.listFiles()!!.any { it.extension == "md" && it.readText().contains("Правка Neo") })
+        // Reinstall/restore: importing the vault reconnects an exported audio attachment.
+        val captureId = java.util.UUID.randomUUID().toString()
+        val audio = java.nio.ByteBuffer.allocate(48).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(40); put("WAVEfmt ".toByteArray()); putInt(16)
+            putShort(1); putShort(1); putInt(16000); putInt(32000); putShort(2); putShort(16)
+            put("data".toByteArray()); putInt(4); putShort(1200); putShort(-1200)
+        }.array()
+        java.io.File(provider.root, "attachments").mkdirs()
+        java.io.File(provider.root, "attachments/$captureId.wav").writeBytes(audio)
+        java.io.File(provider.root, "restored.md").writeText("---\nneo_id: $captureId\n---\n\nТекст из резервной копии\n\n[Аудиозапись](attachments/$captureId.wav)\n")
+        sync()
+        val restored = notes.find(captureId)!!
+        assertEquals(captureId, restored.recordingId)
+        assertArrayEquals(audio, java.io.File(restored.audioPath!!).readBytes())
+        sync()
+        assertFalse(notes.read(captureId).contains("## Расшифровка"))
     }
 }
 

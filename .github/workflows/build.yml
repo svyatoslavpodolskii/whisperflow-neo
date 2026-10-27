@@ -32,20 +32,19 @@ jobs:
           cache: gradle
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-      - name: Keep development signing identity stable across builds
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: VoiceMemory-development-signing-v1
-      - name: Create one shared development key before parallel builds
+      - name: Restore the permanent development signing identity
         shell: bash
+        env:
+          NEO_SIGNING_KEYSTORE: ${{ secrets.NEO_SIGNING_KEYSTORE }}
         run: |
           mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
-            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android \
-              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
-              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          if [ -z "$NEO_SIGNING_KEYSTORE" ]; then
+            echo '::error::NEO_SIGNING_KEYSTORE is missing. Restore the established secret instead of generating another signing identity.'
+            exit 1
           fi
+          printf '%s' "$NEO_SIGNING_KEYSTORE" | base64 --decode > ~/.android/debug.keystore
+          chmod 600 ~/.android/debug.keystore
+          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey >/dev/null
       - name: Run unit tests
         # Hosted Linux runners can otherwise resolve the Android user directory to
         # ~/.config/.android, while the persistent signing cache is in ~/.android.

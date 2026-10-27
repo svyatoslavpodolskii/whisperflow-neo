@@ -47,7 +47,28 @@ class NoteVaultSyncWorker(context: Context, params: WorkerParameters) : Coroutin
             scan(root)
             for ((path, document) in documents) {
                 check(notes.vaultUri == vault)
-                try { notes.importDocument(read(document), path, document.uri.toString(), documents.values.map { it.uri.toString() }.toSet()) }
+                try {
+                    val text = read(document)
+                    val imported = notes.importDocument(text, path, document.uri.toString(), documents.values.map { it.uri.toString() }.toSet())
+                    // A shared Markdown vault is also a portable backup of Neo recordings.
+                    if (!imported.deleted && imported.audioPath == null) {
+                        val captureId = Regex("\\]\\(attachments/([0-9a-f-]{36})\\.wav\\)").find(text)?.groupValues?.get(1)
+                            ?.takeIf(CaptureProtocol::validId)
+                        val attachment = captureId?.let { root.findFile("attachments")?.findFile("$it.wav") }
+                        if (attachment != null) {
+                            val inbox = AudioInboxRepository.get(applicationContext)
+                            if (inbox.find(checkNotNull(captureId))?.deleted != true) {
+                                val bytes = applicationContext.contentResolver.openInputStream(attachment.uri).use {
+                                    checkNotNull(it).readBytesBounded(CaptureProtocol.MAX_WAV_BYTES)
+                                }
+                                val row = inbox.accept(captureId, imported.createdAt, bytes, CaptureProtocol.sha256(bytes))
+                                val transcript = MarkdownNotes.body(text)
+                                inbox.update(row.id, "DONE", transcript)
+                                notes.attachAudio(imported.id, row.id, row.audioPath, transcript)
+                            }
+                        }
+                    }
+                }
                 catch (error: Exception) { Log.w("NoteVault", "Cannot import $path; external file unchanged", error) }
             }
             // Second pass includes conflict copies created during the first pass.
