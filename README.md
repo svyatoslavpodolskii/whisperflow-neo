@@ -1,17 +1,22 @@
 <div align="center">
 <img src="https://raw.githubusercontent.com/pimax-apps/pimax-whisperflow/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="96" />
 
-# WhisperFlow
+# WhisperFlow: Neo
 **Offline-capable Android speech-to-text with Whisper AI — App · IME Keyboard · Digital Assistant · Galaxy Watch**
 
-[![Build & Test](https://img.shields.io/github/actions/workflow/status/pimax-apps/pimax-whisperflow/build.yml?branch=main&style=flat-square&label=build)](https://github.com/pimax-apps/pimax-whisperflow/actions/workflows/build.yml)
-[![Latest Release](https://img.shields.io/github/v/tag/pimax-apps/pimax-whisperflow?style=flat-square&label=release&color=blue)](https://github.com/pimax-apps/pimax-whisperflow/releases/latest)
+[![Build & Test](https://img.shields.io/github/actions/workflow/status/svyatoslavpodolskii/whisperflow-neo/build.yml?branch=voicememory%2Fphase-1-recorder&style=flat-square&label=build)](https://github.com/svyatoslavpodolskii/whisperflow-neo/actions/workflows/build.yml)
+[![Download APK](https://img.shields.io/badge/APK-Actions%20artifacts-orange?style=flat-square)](https://github.com/svyatoslavpodolskii/whisperflow-neo/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Min SDK](https://img.shields.io/badge/min%20sdk-26%20(Android%208.0)-brightgreen?style=flat-square)](https://developer.android.com/about/versions/oreo)
 [![Kotlin](https://img.shields.io/badge/kotlin-1.9.x-purple?style=flat-square)](https://kotlinlang.org)
 </div>
 
 ---
+
+Личный fork **WhisperFlow: Neo** — захват голоса на Wear OS и голосовая память на Android.
+Готовые Phone и Wear APK находятся в **Artifacts** успешных запусков [Build & Test](https://github.com/svyatoslavpodolskii/whisperflow-neo/actions/workflows/build.yml), общий архив — `VoiceMemory-debug`.
+Отдельные GitHub Releases пока не публикуются. [Инструкция к тестовой паре](docs/SYNC-TEST-BUILD.md).
+Основа проекта: [pimax-apps/pimax-whisperflow](https://github.com/pimax-apps/pimax-whisperflow).
 
 WhisperFlow is a speech-to-text Android app with **dual inference**: remote GPU server (Whisper Large V3 via Gradio) or **fully on-device** TensorFlow Lite (Whisper Tiny/Base/Small). It operates in four modes — standalone app, system keyboard (IME), digital assistant (long-press power), and voice keyboard overlay. A companion **Wear OS** app relays audio from Galaxy Watch for transcription.
 

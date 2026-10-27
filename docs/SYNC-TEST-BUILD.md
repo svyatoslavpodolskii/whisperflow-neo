@@ -1,10 +1,11 @@
 # Сборка для проверки записи и синхронизации
 
 Это продолжение Phase 1: включена реальная доставка Watch → Phone с durable ACK.
-Новые APK называются **WhisperFlow X**, версия **1.1-sync / versionCode 2**.
+Новые APK называются **WhisperFlow: Neo**, версия **1.1-neo / versionCode 3**.
+Репозиторий: https://github.com/svyatoslavpodolskii/whisperflow-neo . Смена названия не меняет applicationId или ключ подписи.
 Исходный namespace Wear сохранён, но applicationId обеих платформ теперь `com.pimax.whisperflow`:
 это обязательное условие Data Layer. Старое Wear-приложение `com.pimax.whisperflow.wear` может
-оставаться установленным рядом. Устанавливать и запускать нужно новое **WhisperFlow X**.
+оставаться установленным рядом. Устанавливать и запускать нужно **WhisperFlow: Neo**.
 Данные старой package sandbox автоматически недоступны новой; не удаляйте старое приложение,
 если в нём остались нужные записи. Phone и Wear нужно взять из **одного** нового CI run.
 
