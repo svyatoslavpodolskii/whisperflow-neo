@@ -61,11 +61,11 @@ class CaptureSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
     }
 
     companion object {
-        fun enqueue(context: Context) {
+        fun enqueue(context: Context): Operation {
             val work = OneTimeWorkRequestBuilder<CaptureSyncWorker>()
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
             // A trigger arriving during a scan must cause a second scan, not get lost under KEEP.
-            WorkManager.getInstance(context).enqueueUniqueWork("capture-sync", ExistingWorkPolicy.APPEND_OR_REPLACE, work)
+            return WorkManager.getInstance(context).enqueueUniqueWork("capture-sync", ExistingWorkPolicy.APPEND_OR_REPLACE, work)
         }
     }
 }

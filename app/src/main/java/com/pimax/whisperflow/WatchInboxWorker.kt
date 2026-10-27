@@ -68,8 +68,8 @@ class WatchInboxWorker(context: Context, params: WorkerParameters) : CoroutineWo
     }
 
     companion object {
-        fun enqueue(context: Context) {
-            WorkManager.getInstance(context).enqueueUniqueWork("watch-inbox", ExistingWorkPolicy.APPEND_OR_REPLACE,
+        fun enqueue(context: Context): Operation {
+            return WorkManager.getInstance(context).enqueueUniqueWork("watch-inbox", ExistingWorkPolicy.APPEND_OR_REPLACE,
                 OneTimeWorkRequestBuilder<WatchInboxWorker>()
                     .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build())
         }

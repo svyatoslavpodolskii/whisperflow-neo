@@ -25,11 +25,11 @@ private const val TAG = "📨 WatchMsgReceiver"
 class WatchMessageReceiver : WearableListenerService() {
     override fun onDataChanged(events: DataEventBuffer) {
         if (events.any { it.type == DataEvent.TYPE_CHANGED && it.dataItem.uri.path?.startsWith(CaptureProtocol.ACK_PREFIX) == true }) {
-            CaptureSyncWorker.enqueue(applicationContext)
+            CaptureSyncWorker.enqueue(applicationContext).result.get()
         }
     }
 
-    override fun onPeerConnected(peer: Node) { CaptureSyncWorker.enqueue(applicationContext) }
+    override fun onPeerConnected(peer: Node) { CaptureSyncWorker.enqueue(applicationContext).result.get() }
 
     companion object {
         const val ACTION_WHISPER_MESSAGE = "com.pimax.whisperflow.wear.WHISPER_MESSAGE"

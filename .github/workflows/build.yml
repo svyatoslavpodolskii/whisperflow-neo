@@ -1,5 +1,9 @@
 name: Build & Test
 
+concurrency:
+  group: VoiceMemory-development-build
+  cancel-in-progress: false
+
 on:
   push:
     paths-ignore:
