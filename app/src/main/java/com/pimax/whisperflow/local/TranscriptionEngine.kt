@@ -106,6 +106,9 @@ class TranscriptionEngine(private val context: Context) : Closeable {
     /**
      * Configure GPU server settings.
      */
+    @Volatile private var selectedTask = "transcribe"
+    fun configureTask(task: String) { require(task in listOf("transcribe", "translate")); selectedTask = task }
+
     fun configureServer(url: String, language: String = "en", gatewayUrl: String? = null) {
         serverUrl = url
         serverLanguage = language
@@ -215,7 +218,7 @@ class TranscriptionEngine(private val context: Context) : Closeable {
 
                 try {
                     val api = WhisperApi(serverUrl)
-                    val result = api.transcribe(tempFile, language ?: serverLanguage, "transcribe")
+                    val result = api.transcribe(tempFile, language ?: serverLanguage, selectedTask)
                     val duration = System.currentTimeMillis() - startTime
 
                     TranscriptionResult(
@@ -274,7 +277,7 @@ class TranscriptionEngine(private val context: Context) : Closeable {
 
         try {
             val api = WhisperApi(serverUrl)
-            val result = api.transcribe(tempFile, language, "transcribe")
+            val result = api.transcribe(tempFile, language, selectedTask)
             val duration = System.currentTimeMillis() - startTime
 
             TranscriptionResult(
@@ -331,7 +334,7 @@ class TranscriptionEngine(private val context: Context) : Closeable {
             Log.d(TAG, "Local auto-detect mode (no forced language)")
         }
 
-        val result = engine.transcribe(samples, langToken)
+        val result = if (selectedTask == "translate") engine.translate(samples) else engine.transcribe(samples, langToken)
 
         return TranscriptionResult(
             text = result.text,

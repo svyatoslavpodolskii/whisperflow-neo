@@ -1,6 +1,8 @@
 package com.pimax.whisperflow
 
 import android.content.Intent
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Mic
 import com.pimax.whisperflow.sync.uiText
 import android.Manifest
 import com.pimax.whisperflow.local.ModelManager
@@ -103,41 +105,33 @@ private val CoralRed = Color(0xFFFF4444)
 private val SkyBlue = Color(0xFF4FC3F7)
 
 private const val TAG = "🎙️ WhisperFlow"
+private const val CHUNK_INITIAL_DELAY_MS = 1500L
 
 /** Derive pimax-auth URL from any service URL on the same Pi host (port 8100). */
-fun authUrlFromTasksUrl(serviceUrl: String): String {
-    return try {
-        val uri = java.net.URI(serviceUrl)
-        if (uri.host != null) "http://${uri.host}:8100" else ""
-    } catch (e: Exception) {
-        ""
-    }
-}
+fun authUrlFromTasksUrl(serviceUrl: String): String = deriveServiceUrl(serviceUrl, 8100)
 
 fun deriveServiceUrl(base: String, port: Int): String {
-    if (base.isEmpty()) return ""
-    return try {
-        val uri = java.net.URI(base)
-        if (uri.host != null) "http://${uri.host}:$port" else ""
-    } catch (e: Exception) {
-        ""
-    }
+    if (!validServiceUrl(base) || port !in 0..65535) return ""
+    return runCatching {
+        val uri = java.net.URI(base.trim())
+        java.net.URI(uri.scheme, null, uri.host, port, null, null, null).toString()
+    }.getOrDefault("")
 }
-
-// Live transcription timing
-private const val CHUNK_INTERVAL_MS = 1800L
-private const val CHUNK_INITIAL_DELAY_MS = 1500L
 
 // ═══════════════════════════════════════════════════════════════
 // 🏠 ACTIVITY
 // ═══════════════════════════════════════════════════════════════
 
 class MainActivity : ComponentActivity() {
+    private var requestedNoteId by mutableStateOf<String?>(null)
+    private var requestedNoteGeneration by mutableIntStateOf(0)
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); requestedNoteId = intent.getStringExtra(NoteNotifications.NOTE_ID_EXTRA); requestedNoteGeneration++ }
     override fun attachBaseContext(base: Context) = super.attachBaseContext(com.pimax.whisperflow.sync.UiLanguage.wrap(base))
     private var audioRecorder: AudioRecorder? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedNoteId = intent.getStringExtra(NoteNotifications.NOTE_ID_EXTRA)
         if (packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WATCH)) {
             setContent {
                 Box(Modifier.fillMaxSize().background(Color.Black).padding(24.dp), contentAlignment = Alignment.Center) {
@@ -153,7 +147,7 @@ class MainActivity : ComponentActivity() {
         WatchInboxWorker.enqueue(applicationContext)
         setContent {
             WhisperFlowTheme {
-                MainScreen(audioRecorder!!)
+                MainScreen(audioRecorder!!, requestedNoteId, requestedNoteGeneration)
             }
         }
     }
@@ -198,11 +192,12 @@ fun WhisperFlowTheme(content: @Composable () -> Unit) {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-fun MainScreen(audioRecorder: AudioRecorder) {
+fun MainScreen(audioRecorder: AudioRecorder, requestedNoteId: String? = null, requestedNoteGeneration: Int = 0) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf(androidx.compose.ui.res.stringResource(R.string.nav_record),
         androidx.compose.ui.res.stringResource(R.string.notes_title), androidx.compose.ui.res.stringResource(R.string.nav_settings))
     val mainRoutes = listOf(0, 1, 3)
+    LaunchedEffect(requestedNoteId, requestedNoteGeneration) { if (requestedNoteId != null) selectedTab = 1 }
     androidx.activity.compose.BackHandler(enabled = selectedTab == 2 || selectedTab == 4) {
         selectedTab = if (selectedTab == 2) 3 else 1
     }
@@ -210,6 +205,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val settingsStore = remember { SettingsDataStore(context) }
+    val phoneVisualization by settingsStore.phoneVisualization.collectAsState(initial = "BARS")
     val modelManager = remember { ModelManager(context) }
     val transcriptionEngine = remember { TranscriptionEngine(context) }
     val whisperServer = remember { WhisperServer(context, transcriptionEngine) }
@@ -221,7 +217,8 @@ fun MainScreen(audioRecorder: AudioRecorder) {
     var localModel by remember { mutableStateOf(SettingsDataStore.DEFAULT_LOCAL_MODEL) }
     var isServerOnline by remember { mutableStateOf<Boolean?>(null) }
     var isGatewayOnline by remember { mutableStateOf<Boolean?>(null) }
-    var liveChunkingEnabled by remember { mutableStateOf(true) }
+    var liveChunkingRequested by remember { mutableStateOf(true) }
+    val liveChunkingEnabled = liveTranscriptionEnabled(liveChunkingRequested, inferenceMode)
 
     // All service URLs derived from serverUrl — configure server once in Settings
     val gatewayUrl = deriveServiceUrl(serverUrl, 8068)
@@ -295,6 +292,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
     var historyJson by remember { mutableStateOf("[]") }
 
     var hasPermission by remember { mutableStateOf(audioRecorder.hasPermission()) }
+    RequestNoteNotificationPermission(hasPermission)
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -347,7 +345,9 @@ fun MainScreen(audioRecorder: AudioRecorder) {
     LaunchedEffect(Unit) {
         serverUrl = settingsStore.serverUrl.first()
         language = settingsStore.language.first()
+        liveChunkingRequested = settingsStore.liveChunkingEnabled.first()
         task = settingsStore.task.first()
+        transcriptionEngine.configureTask(task)
         inferenceMode = settingsStore.inferenceMode.first()
         localModel = settingsStore.localModel.first()
         historyJson = settingsStore.history.first()
@@ -503,7 +503,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                         transcriptionText = liveChunks.joinToString(" ")
                                     }
                                     Log.d(TAG, "Live chunk (LOCAL): $filtered")
-                                    if (ramblerEnabled) {
+                                    if (ramblerEnabled && inferenceMode == "LLM_GATEWAY") {
                                         scope.launch(Dispatchers.IO) {
                                             val gatewayUrlVal = settingsStore.gatewayUrl.first()
                                             val api = WhisperApi("")
@@ -552,7 +552,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                         transcriptionText = liveChunks.joinToString(" ")
                                     }
                                     Log.d(TAG, "Live chunk (GPU): $filtered")
-                                    if (ramblerEnabled) {
+                                    if (ramblerEnabled && inferenceMode == "LLM_GATEWAY") {
                                         scope.launch(Dispatchers.IO) {
                                             val gatewayUrlVal = settingsStore.gatewayUrl.first()
                                             val api = WhisperApi("")
@@ -619,7 +619,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                 transcriptionText = rawText
                                 transcriptionTimeMs = result.processingTimeMs
 
-                                if (ramblerEnabled && rawText.isNotBlank()) {
+                                if (ramblerEnabled && inferenceMode == "LLM_GATEWAY" && rawText.isNotBlank()) {
                                     val gatewayUrlVal = settingsStore.gatewayUrl.first()
                                     val api = WhisperApi("")
                                     val cleaned = api.cleanRamblerText(gatewayUrlVal, rawText)
@@ -697,7 +697,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                                     transcriptionText = finalText
                                     transcriptionTimeMs = result.processingTimeMs
 
-                                    if (ramblerEnabled && finalText.isNotBlank()) {
+                                    if (ramblerEnabled && inferenceMode == "LLM_GATEWAY" && finalText.isNotBlank()) {
                                         val gatewayUrlVal = settingsStore.gatewayUrl.first()
                                         val api = WhisperApi("")
                                         val cleaned = api.cleanRamblerText(gatewayUrlVal, finalText)
@@ -807,7 +807,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     localModelName = localModel,
                     transcriptionEngine = transcriptionEngine,
                     onLiveModeToggle = { enabled ->
-                        liveChunkingEnabled = enabled
+                        liveChunkingRequested = enabled
                         scope.launch { settingsStore.updateLiveChunkingEnabled(enabled) }
                     },
                     onRecord = onRecord,
@@ -824,9 +824,10 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                         clipboard.setPrimaryClip(ClipData.newPlainText("Transcription", transcriptionText))
                         Toast.makeText(context, uiText(R.string.ui_copied), Toast.LENGTH_SHORT).show()
                     },
-                    isServerRunning = isLocalServerRunning
+                    isServerRunning = isLocalServerRunning,
+                    visualizationStyle = phoneVisualization
                 )
-                1 -> NotesScreen(onOpenRecordings = { selectedTab = 4 })
+                1 -> NotesScreen(initialNoteId = requestedNoteId, requestGeneration = requestedNoteGeneration)
                 4 -> HistoryTab(
                     historyJson = historyJson,
                     onRefresh = {
@@ -853,6 +854,8 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     }
                 )
                 2 -> ConnectionsTab(
+                    serverAddress = serverUrl,
+                    onServerAddressChange = { serverUrl = it; scope.launch { settingsStore.updateServerUrl(it) } },
                     tasksEnabled = tasksEnabled,
                     isTasksOnline = isTasksOnline,
                     streakEnabled = streakEnabled,
@@ -965,7 +968,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     onOpenConnections = { selectedTab = 2 },
                     serverUrl = serverUrl,
                     language = language,
-                    task = task,
+                    task = if (inferenceMode == "LLM_GATEWAY") "transcribe" else task,
                     inferenceMode = inferenceMode,
                     localModel = localModel,
                     isServerOnline = isServerOnline,
@@ -1025,16 +1028,12 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                         }
                         SoundFeedback.playSuccess()
                     },
-                    onServerUrlChange = { serverUrl = it },
-                    onLanguageChange = { language = it },
-                    onTaskChange = { task = it },
+                    onServerUrlChange = { serverUrl = it; scope.launch { settingsStore.updateServerUrl(it) }; transcriptionEngine.configureServer(serverUrl, language, deriveServiceUrl(serverUrl, 8068)) },
+                    onLanguageChange = { language = it; scope.launch { settingsStore.updateLanguage(it) }; transcriptionEngine.configureServer(serverUrl, language, deriveServiceUrl(serverUrl, 8068)) },
+                    onTaskChange = { task = it; transcriptionEngine.configureTask(it); scope.launch { settingsStore.updateTask(it) } },
                     onInferenceModeChange = { mode ->
                         inferenceMode = mode
-                        // Disable live chunking for LLM Gateway as it's not supported/efficient
-                        if (mode == "LLM_GATEWAY") {
-                            liveChunkingEnabled = false
-                            scope.launch { settingsStore.updateLiveChunkingEnabled(false) }
-                        }
+                        if (mode != "LLM_GATEWAY") ramblerEnabled = false
                         scope.launch {
                             settingsStore.updateInferenceMode(mode)
                             transcriptionEngine.setMode(
@@ -1113,9 +1112,10 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                     },
                     onChunkIntervalChange = { chunkIntervalMs = it },
                     onSilenceTimeoutChange = { silenceTimeoutMs = it },
-                    onHallucinationThresholdChange = { hallucinationThreshold = it },
-                    onToastTemplateChange = { toastTemplate = it },
+                    onHallucinationThresholdChange = { hallucinationThreshold = it; scope.launch { settingsStore.updateHallucinationThreshold(it) } },
+                    onToastTemplateChange = { toastTemplate = it; scope.launch { settingsStore.updateToastTemplate(it) } },
                     onLiveChunkingEnabledChange = { enabled ->
+                        liveChunkingRequested = enabled
                         scope.launch { settingsStore.updateLiveChunkingEnabled(enabled) }
                     },
                     localServerEnabled = localServerEnabled,
@@ -1141,7 +1141,7 @@ fun MainScreen(audioRecorder: AudioRecorder) {
                             settingsStore.updateSilenceTimeoutMs(silenceTimeoutMs)
                             settingsStore.updateHallucinationThreshold(hallucinationThreshold)
                             settingsStore.updateToastTemplate(toastTemplate)
-                            settingsStore.updateLiveChunkingEnabled(liveChunkingEnabled)
+                            settingsStore.updateLiveChunkingEnabled(liveChunkingRequested)
                             settingsStore.updateLocalServerEnabled(localServerEnabled)
                             settingsStore.updateLocalServerPort(localServerPort)
                             settingsStore.updateSoundEnabled(soundEnabled)
@@ -1303,7 +1303,8 @@ fun RecordTab(
     onAttachFile: () -> Unit,
     onClear: () -> Unit,
     onCopy: () -> Unit,
-    isServerRunning: Boolean = false
+    isServerRunning: Boolean = false,
+    visualizationStyle: String = "BARS"
 ) {
     val isRecording = recorderState == AudioRecorder.State.RECORDING
 
@@ -1374,13 +1375,8 @@ fun RecordTab(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 150)) + expandVertically()
         ) {
-            WaveformVisualizer(
-                amplitudeHistory = amplitudeHistory,
-                isRecording = isRecording,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-            )
+            PhoneCaptureVisualizer(visualizationStyle, if (isRecording) amplitude else 0f,
+                Modifier.fillMaxWidth().height(160.dp))
         }
 
         // Live transcription stream - below waveform
@@ -2768,6 +2764,8 @@ fun HistoryCard(entry: HistoryEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
 
 @Composable
 fun ConnectionsTab(
+    serverAddress: String = "",
+    onServerAddressChange: (String) -> Unit = {},
     tasksEnabled: Boolean,
     isTasksOnline: Boolean?,
     streakEnabled: Boolean,
@@ -2787,11 +2785,7 @@ fun ConnectionsTab(
     onRefresh: () -> Unit,
     onSave: () -> Unit
 ) {
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(80)
-        isVisible = true
-    }
+    val isVisible = true
 
     @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
     val state = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
@@ -2842,12 +2836,21 @@ fun ConnectionsTab(
 
         Spacer(Modifier.height(14.dp))
 
+        SettingsCard(title = androidx.compose.ui.res.stringResource(R.string.neo_external_address)) {
+            StyledTextField(serverAddress, onServerAddressChange, "http://server.local:7860")
+            FeatureHelp(R.string.neo_external_address_help)
+            if (serverAddress.isNotBlank() && !validServiceUrl(serverAddress))
+                Text(androidx.compose.ui.res.stringResource(R.string.neo_invalid_address), color = CoralRed, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(14.dp))
+
         // Identity Card
         AnimatedVisibility(
             visible = isVisible,
             enter = fadeIn(tween(400, delayMillis = 100)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.neo_identity)) {
+                FeatureHelp(R.string.help_identity)
                 if (isLoadingIdentity) {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
@@ -2927,7 +2930,7 @@ fun ConnectionsTab(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                uiText(R.string.ui_not_recognized),
+                                uiText(R.string.neo_no_identity),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = CoralRed
@@ -2969,6 +2972,7 @@ fun ConnectionsTab(
             enter = fadeIn(tween(400, delayMillis = 60)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.ui_tasks)) {
+                FeatureHelp(R.string.help_tasks)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2989,6 +2993,7 @@ fun ConnectionsTab(
                     }
                     Switch(
                         checked = tasksEnabled,
+                        enabled = validServiceUrl(serverAddress),
                         onCheckedChange = onTasksEnabledChange,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Amber,
@@ -3054,6 +3059,7 @@ fun ConnectionsTab(
             enter = fadeIn(tween(400, delayMillis = 120)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.ui_streak_tracker)) {
+                FeatureHelp(R.string.help_habits)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3074,6 +3080,7 @@ fun ConnectionsTab(
                     }
                     Switch(
                         checked = streakEnabled,
+                        enabled = validServiceUrl(serverAddress),
                         onCheckedChange = onStreakEnabledChange,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Emerald,
@@ -3144,6 +3151,7 @@ fun ConnectionsTab(
             enter = fadeIn(tween(400, delayMillis = 180)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.ui_assistant)) {
+                FeatureHelp(R.string.help_remote_assistant)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3164,6 +3172,7 @@ fun ConnectionsTab(
                     }
                     Switch(
                         checked = assistantEnabled,
+                        enabled = validServiceUrl(serverAddress),
                         onCheckedChange = onAssistantEnabledChange,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Amber,
@@ -3359,6 +3368,7 @@ fun SettingsTab(
         }
 
 
+        FeatureHelp(R.string.neo_autosaved)
         // Live Chunking Toggle
         SettingsSection(
             visible = isVisible,
@@ -3614,6 +3624,7 @@ fun SettingsTab(
             enter = fadeIn(tween(400, delayMillis = 100)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.ui_distributed_stt_server)) {
+                FeatureHelp(R.string.help_server)
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -3747,6 +3758,9 @@ fun SettingsTab(
                     selected = language,
                     onSelect = onLanguageChange
                 )
+                Spacer(Modifier.height(12.dp))
+                ModelRecommendation(language)
+
             }
         }
 
@@ -3757,6 +3771,7 @@ fun SettingsTab(
             enter = fadeIn(tween(400, delayMillis = 240)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.ui_transcription_task)) {
+                FeatureHelp(R.string.help_task)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -3770,13 +3785,14 @@ fun SettingsTab(
                     TaskChip(
                         label = uiText(R.string.ui_translate),
                         isSelected = task == "translate",
+                        enabled = inferenceMode != "LLM_GATEWAY",
                         onClick = { onTaskChange("translate") },
                         modifier = Modifier.weight(1f)
                     )
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (task == "translate") uiText(R.string.ui_audio_english_text) else uiText(R.string.ui_audio_same_language_text),
+                    if (inferenceMode == "LLM_GATEWAY") uiText(R.string.neo_gateway_transcribe_only) else if (task == "translate") uiText(R.string.ui_audio_english_text) else uiText(R.string.ui_audio_same_language_text),
                     fontSize = 10.sp,
                     color = WarmGray
                 )
@@ -3791,6 +3807,7 @@ fun SettingsTab(
             enter = fadeIn(tween(400, delayMillis = 280)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.ui_assistant_power_button)) {
+                FeatureHelp(R.string.help_assistant)
                 Text(
                     uiText(R.string.ui_stop_recording),
                     fontSize = 12.sp,
@@ -3898,6 +3915,7 @@ fun SettingsTab(
             enter = fadeIn(tween(400, delayMillis = 320)) + slideInVertically(initialOffsetY = { 20 })
         ) {
             SettingsCard(title = uiText(R.string.ui_hardware_buttons)) {
+                FeatureHelp(R.string.help_hardware)
                 // Volume PTT
                 Row(
                     modifier = Modifier
@@ -4290,7 +4308,8 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .toggleable(
-                            value = ramblerEnabled,
+                            value = ramblerEnabled && inferenceMode == "LLM_GATEWAY",
+                            enabled = inferenceMode == "LLM_GATEWAY",
                             onValueChange = onRamblerEnabledChange,
                             role = Role.Switch
                         ),
@@ -4299,6 +4318,7 @@ fun SettingsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(uiText(R.string.ui_rambler_voice_dictation), color = WarmWhite, fontSize = 14.sp)
+                        FeatureHelp(R.string.neo_gateway_only)
                         Text(
                             uiText(R.string.ui_cleanup_filler_words_and_self_corrections_using_llm_gateway),
                             color = MutedGray,
@@ -4306,7 +4326,8 @@ fun SettingsTab(
                         )
                     }
                     Switch(
-                        checked = ramblerEnabled,
+                        checked = ramblerEnabled && inferenceMode == "LLM_GATEWAY",
+                        enabled = inferenceMode == "LLM_GATEWAY",
                         onCheckedChange = onRamblerEnabledChange,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Amber,
@@ -4315,15 +4336,6 @@ fun SettingsTab(
                     )
                 }
             }
-        }
-
-
-        // Save
-        SettingsSection(
-            visible = isVisible,
-            enter = fadeIn(tween(400, delayMillis = 400))
-        ) {
-            PrimaryButton(text = uiText(R.string.ui_save_settings), onClick = onSave)
         }
 
 
@@ -4355,6 +4367,7 @@ fun SettingsTab(
             }
         }
 
+        NeoPreferencesPanel()
         SettingsCard(title = androidx.compose.ui.res.stringResource(R.string.advanced_section)) {
             TextButton(onClick = {
                 val current = com.pimax.whisperflow.sync.UiLanguage.code(languageContext)
@@ -4405,7 +4418,7 @@ fun SmallActionButton(text: String, color: Color, onClick: () -> Unit) {
 
 @Composable
 fun BottomNavBar(tabs: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
-    val icons = listOf(Icons.Default.Home, Icons.Default.Refresh, Icons.Default.Favorite, Icons.Default.Settings)
+    val icons = listOf(Icons.Default.Mic, Icons.Default.Description, Icons.Default.Settings)
 
     Row(
         modifier = Modifier
@@ -4576,7 +4589,8 @@ fun TaskChip(
     label: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     val bgColor by animateColorAsState(
         targetValue = if (isSelected) Amber.copy(alpha = 0.1f) else Color.Transparent,
@@ -4596,7 +4610,7 @@ fun TaskChip(
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
             .border(1.dp, borderColor, RoundedCornerShape(10.dp))
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(vertical = 11.dp),
         contentAlignment = Alignment.Center
     ) {

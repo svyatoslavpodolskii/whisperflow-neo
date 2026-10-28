@@ -26,8 +26,8 @@ class NoteVaultSyncTest {
     @Test fun safVaultRoundTripsMarkdownAndPreservesBothConcurrentEdits() = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         // Helpers used by other tests must not retain a connection from an earlier Robolectric sandbox.
-        AudioInboxRepository.get(context).close()
-        MarkdownNotes.get(context).close()
+        AudioInboxRepository.reopenForTests(context)
+        MarkdownNotes.reopenForTests(context)
         val provider = LocalVaultProvider()
         provider.attachInfo(context, ProviderInfo().apply {
             authority = "neo.test.vault"; exported = true; grantUriPermissions = true

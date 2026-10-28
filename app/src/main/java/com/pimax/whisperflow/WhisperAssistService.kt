@@ -529,7 +529,7 @@ class WhisperAssistSession(context: Context) : VoiceInteractionSession(context) 
                                 val toastMsg = when {
                                     toastParts.isNotEmpty() -> toastParts.joinToString(" • ")
                                     assistantUsed -> assistantMessage ?: "⚠️ Assistant: no response"
-                                    else -> "✅ Copied: ${finalText.take(70)}"
+                                    else -> clipboardToast(ctx, finalText.take(70))
                                 }
                                 Toast.makeText(ctx, toastMsg, Toast.LENGTH_LONG).show()
                             }
@@ -1004,7 +1004,7 @@ class WhisperAssistSession(context: Context) : VoiceInteractionSession(context) 
                             val toastMsg = when {
                                 toastParts.isNotEmpty() -> toastParts.joinToString(" • ")
                                 assistantUsed -> assistantMessage ?: "⚠️ Assistant: no response"
-                                else -> "✅ Copied: ${finalText.take(70)}"
+                                else -> clipboardToast(ctx, finalText.take(70))
                             }
                             Toast.makeText(ctx, toastMsg, Toast.LENGTH_LONG).show()
                         }
@@ -1141,7 +1141,7 @@ class WhisperAssistSession(context: Context) : VoiceInteractionSession(context) 
                                     val toastMsg = when {
                                         toastParts.isNotEmpty() -> toastParts.joinToString(" • ")
                                         assistantUsed -> assistantMessage ?: "⚠️ Assistant: no response"
-                                        else -> "✅ Copied: ${processedText.take(50)}..."
+                                        else -> clipboardToast(ctx, processedText.take(50))
                                     }
                                     Toast.makeText(ctx, toastMsg, Toast.LENGTH_LONG).show()
                                 }

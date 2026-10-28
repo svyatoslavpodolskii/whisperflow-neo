@@ -25,7 +25,8 @@ import java.util.UUID
 data class MarkdownNote(val id: String, val title: String, val fileName: String, val createdAt: Long,
     val updatedAt: Long, val recordingId: String?, val audioPath: String?, val edited: Boolean,
     val transcript: String, val documentUri: String?, val syncedHash: String?, val deleted: Boolean,
-    val deleteAudio: Boolean = false, val deletedAt: Long? = null)
+    val deleteAudio: Boolean = false, val deletedAt: Long? = null,
+    val seenAt: Long = 0, val notifiedAt: Long = 0)
 
 enum class NoteSyncDecision { SAME, PUSH, PULL, CONFLICT }
 fun decideNoteSync(local: String, remote: String?, baseline: String?): NoteSyncDecision = when {
@@ -36,7 +37,7 @@ fun decideNoteSync(local: String, remote: String?, baseline: String?): NoteSyncD
 }
 
 /** Markdown files are the content; SQLite is a recoverable index and synchronization journal. */
-class MarkdownNotes internal constructor(private val context: Context) : SQLiteOpenHelper(context, "markdown_notes.db", null, 3) {
+class MarkdownNotes internal constructor(private val context: Context) : SQLiteOpenHelper(context, "markdown_notes.db", null, 4) {
     private val directory = File(context.filesDir, "notes").apply { check(isDirectory || mkdirs()) }
     private val changes = MutableStateFlow(0L)
     private val draftScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -68,7 +69,8 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
             createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, recordingId TEXT, audioPath TEXT,
             edited INTEGER NOT NULL DEFAULT 0, transcript TEXT NOT NULL DEFAULT '',
             documentUri TEXT, syncedHash TEXT, deleted INTEGER NOT NULL DEFAULT 0,
-            deleteAudio INTEGER NOT NULL DEFAULT 0, deletedAt INTEGER)""")
+            deleteAudio INTEGER NOT NULL DEFAULT 0, deletedAt INTEGER,
+            seenAt INTEGER NOT NULL DEFAULT 0, notifiedAt INTEGER NOT NULL DEFAULT 0)""")
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("ALTER TABLE notes ADD COLUMN deleteAudio INTEGER NOT NULL DEFAULT 0")
@@ -77,16 +79,32 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
             db.execSQL("UPDATE notes SET deletedAt=? WHERE deleted=1", arrayOf(System.currentTimeMillis()))
             db.execSQL("UPDATE notes SET deleteAudio=1 WHERE deleted=1")
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE notes ADD COLUMN seenAt INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE notes ADD COLUMN notifiedAt INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("UPDATE notes SET seenAt=createdAt")
+        }
     }
     fun read(id: String): String { require(CaptureProtocol.validId(id)); return File(directory, "$id.md").readText(Charsets.UTF_8) }
     fun hash(id: String): String = CaptureProtocol.sha256(read(id).toByteArray(Charsets.UTF_8))
+    @Synchronized fun snapshot(id: String): Pair<String, String> {
+        val text = read(id)
+        return text to CaptureProtocol.sha256(text.toByteArray(Charsets.UTF_8))
+    }
+    @Synchronized fun markRead(id: String) {
+        writableDatabase.update("notes", ContentValues().apply { put("seenAt", System.currentTimeMillis()) }, "id=?", arrayOf(id))
+        changes.update { it + 1 }
+    }
+    @Synchronized fun markNotified(id: String, updatedAt: Long) {
+        writableDatabase.update("notes", ContentValues().apply { put("notifiedAt", updatedAt) }, "id=?", arrayOf(id))
+    }
     fun find(id: String): MarkdownNote? = readableDatabase.query("notes", null, "id=?", arrayOf(id), null, null, null).use { c ->
         if (!c.moveToFirst()) null else {
             fun str(key: String) = c.getString(c.getColumnIndexOrThrow(key))
             fun long(key: String) = c.getLong(c.getColumnIndexOrThrow(key))
             MarkdownNote(str("id"), str("title"), str("fileName"), long("createdAt"), long("updatedAt"),
                 str("recordingId"), str("audioPath"), long("edited") != 0L, str("transcript"), str("documentUri"), str("syncedHash"), long("deleted") != 0L, long("deleteAudio") != 0L,
-                if (c.isNull(c.getColumnIndexOrThrow("deletedAt"))) null else long("deletedAt"))
+                if (c.isNull(c.getColumnIndexOrThrow("deletedAt"))) null else long("deletedAt"), long("seenAt"), long("notifiedAt"))
         }
     }
     fun list(includeDeleted: Boolean = false): List<MarkdownNote> {
@@ -101,7 +119,7 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
         directory.listFiles { file -> file.extension == "md" }?.forEach { file ->
             val id = file.nameWithoutExtension
             if (CaptureProtocol.validId(id) && find(id) == null) runCatching {
-                val capture = AudioInboxRepository.get(context).find(id)
+                val capture = runCatching { AudioInboxRepository.get(context).find(id) }.getOrNull()
                 create(file.readText(Charsets.UTF_8), id, createdAt = file.lastModified(),
                     recordingId = capture?.id, audioPath = capture?.audioPath, transcript = capture?.transcription ?: "")
             }.onFailure { android.util.Log.e("MarkdownNotes", "Orphan Markdown retained: $id", it) }
@@ -120,6 +138,7 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
             put("id", id); put("title", title(document)); put("fileName", name)
             put("createdAt", createdAt); put("updatedAt", createdAt); put("recordingId", recordingId)
             put("audioPath", audioPath); put("transcript", transcript); put("edited", if (edited) 1 else 0)
+            put("seenAt", if (edited) createdAt else 0)
         }
         writableDatabase.insertOrThrow("notes", null, values)
         changes.update { it + 1 }
@@ -139,7 +158,7 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
             val updated = if (existing.edited) read(id) + "\n\n## Расшифровка\n\n$transcript\n" else generated
             write(id, withNoteId(updated, id))
             writableDatabase.update("notes", ContentValues().apply {
-                put("title", title(updated)); put("transcript", transcript); put("updatedAt", System.currentTimeMillis())
+                put("title", title(updated)); put("transcript", transcript); put("updatedAt", System.currentTimeMillis()); put("seenAt", 0)
             }, "id=?", arrayOf(id))
             changes.update { it + 1 }
         }
@@ -235,6 +254,17 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
         }
         changes.update { it + 1 }
     }
+    @Synchronized fun purge(id: String) {
+        val note = find(id) ?: return
+        require(note.deleted) { "Only trashed notes may be permanently deleted" }
+        note.recordingId?.let { AudioInboxRepository.get(context).delete(it) }
+        note.audioPath?.let { path -> val file = File(path); check(!file.exists() || file.delete()) }
+        val file = File(directory, "$id.md")
+        check(!file.exists() || file.delete())
+        clearDraft(id)
+        writableDatabase.update("notes", ContentValues().apply { putNull("audioPath"); put("deleteAudio", 1) }, "id=?", arrayOf(id))
+        changes.update { it + 1 }
+    }
     @Synchronized fun draft(id: String): Pair<String, String>? = draftCache[id] ?: runCatching {
         val data = org.json.JSONObject(File(directory, "$id.draft.json").readText())
         data.getString("text") to data.getString("baseHash")
@@ -276,6 +306,10 @@ class MarkdownNotes internal constructor(private val context: Context) : SQLiteO
         @Volatile private var instance: MarkdownNotes? = null
         fun get(context: Context): MarkdownNotes = instance ?: synchronized(this) {
             instance ?: MarkdownNotes(context.applicationContext).also { instance = it }
+        }
+        internal fun reopenForTests(context: Context): MarkdownNotes = synchronized(this) {
+            instance?.close()
+            MarkdownNotes(context.applicationContext).also { instance = it }
         }
         /** Infrastructure metadata stays in the .md file, never in the user's editing surface. */
         fun body(document: String): String {

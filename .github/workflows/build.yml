@@ -74,6 +74,7 @@ jobs:
             wear/build/reports/watch-launch.png
             wear/build/reports/watch-recording.png
             app/build/reports/notes-list.png
+            app/build/reports/notes-editor.png
             wear/build/outputs/apk/release/wear-manifest.txt
             app/build/outputs/apk/release/build-identity.txt
           retention-days: 14

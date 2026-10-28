@@ -115,5 +115,9 @@ class AudioInboxRepository internal constructor(private val context: Context) : 
         fun get(context: Context): AudioInboxRepository = instance ?: synchronized(this) {
             instance ?: AudioInboxRepository(context.applicationContext).also { instance = it }
         }
+        internal fun reopenForTests(context: Context): AudioInboxRepository = synchronized(this) {
+            instance?.close()
+            AudioInboxRepository(context.applicationContext).also { instance = it }
+        }
     }
 }

@@ -27,7 +27,7 @@ class WatchTranscriptionWorker(context: Context, params: WorkerParameters) : Cor
         if (recording.deleted || recording.state == "DONE") return Result.success()
         val engine = TranscriptionEngine(applicationContext)
         try {
-            setForeground(foreground(id))
+            if (SettingsDataStore(applicationContext).showTranscriptionStatus.first()) setForeground(foreground(id))
             repository.update(id, "PROCESSING")
             val settings = SettingsDataStore(applicationContext)
             val server = settings.serverUrl.first()
@@ -37,6 +37,7 @@ class WatchTranscriptionWorker(context: Context, params: WorkerParameters) : Cor
             engine.setMode(mode)
             val language = settings.language.first()
             engine.configureServer(server, language, deriveServiceUrl(server, 8068))
+            engine.configureTask(settings.task.first())
             if (mode == TranscriptionEngine.TranscriptionMode.LOCAL) {
                 val model = ModelManager.WhisperModel.valueOf(settings.localModel.first())
                 if (!engine.modelManager.isModelInstalled(model) || !engine.modelManager.isVocabInstalled()) {
@@ -66,6 +67,7 @@ class WatchTranscriptionWorker(context: Context, params: WorkerParameters) : Cor
             repository.update(id, "DONE", text)
             return Result.success()
         } catch (cancelled: CancellationException) {
+            repository.update(id, "PENDING", recording.transcription)
             throw cancelled // WorkManager resumes interrupted persistent work; audio remains intact.
         } catch (error: Exception) {
             repository.update(id, "FAILED", error = error.message ?: applicationContext.getString(R.string.memory_transcription_failed))
@@ -79,7 +81,10 @@ class WatchTranscriptionWorker(context: Context, params: WorkerParameters) : Cor
     private fun foreground(id: String): ForegroundInfo {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(NotificationChannel("transcription", applicationContext.getString(R.string.memory_channel), NotificationManager.IMPORTANCE_LOW))
-        val intent = PendingIntent.getActivity(applicationContext, 0, Intent(applicationContext, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val openNote = Intent(applicationContext, MainActivity::class.java)
+            .putExtra(NoteNotifications.NOTE_ID_EXTRA, id)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val intent = PendingIntent.getActivity(applicationContext, id.hashCode(), openNote, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(applicationContext, "transcription")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(applicationContext.getString(R.string.memory_processing))

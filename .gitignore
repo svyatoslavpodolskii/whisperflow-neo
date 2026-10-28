@@ -2,6 +2,7 @@
 /build
 /app/build
 /wear/build
+/rich-editor/build
 *.apk
 *.aab
 

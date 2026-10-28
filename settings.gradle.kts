@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 rootProject.name = "WhisperFlow"
 include(":app")
 include(":wear")
+include(":rich-editor")

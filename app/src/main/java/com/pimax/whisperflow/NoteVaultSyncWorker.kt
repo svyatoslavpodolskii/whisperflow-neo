@@ -31,6 +31,7 @@ class NoteVaultSyncWorker(context: Context, params: WorkerParameters) : Coroutin
                 val id = UUID.nameUUIDFromBytes("phone-history:$timestamp".toByteArray()).toString()
                 notes.materialize(id, timestamp, row.optString("text"), "PHONE", row.optString("audio_file").takeIf { it.isNotBlank() })
             }
+            if (SettingsDataStore(applicationContext).notifyUnreadNotes.first()) notes.list().forEach { NoteNotifications.publish(applicationContext, it) }
             val vault = notes.vaultUri ?: return@withContext Result.success()
             val root = checkNotNull(DocumentFile.fromTreeUri(applicationContext, Uri.parse(vault)))
             check(root.isDirectory && root.canWrite())
@@ -78,8 +79,13 @@ class NoteVaultSyncWorker(context: Context, params: WorkerParameters) : Coroutin
                     val remote = note.documentUri?.let { uri -> documents.values.firstOrNull { it.uri.toString() == uri } }
                         ?: documents[note.fileName]
                     if (note.deleted) {
-                        if (remote != null && remote.delete()) documents.entries.removeAll { it.value.uri == remote.uri }
-                        if (note.deleteAudio && note.recordingId != null) root.findFile("attachments")?.findFile(note.recordingId + ".wav")?.delete()
+                        if (remote != null) {
+                            check(!remote.exists() || remote.delete()) { "Cannot remove Markdown from the shared folder" }
+                            documents.entries.removeAll { it.value.uri == remote.uri }
+                        }
+                        if (note.deleteAudio && note.recordingId != null) root.findFile("attachments")?.findFile(note.recordingId + ".wav")?.let {
+                            check(!it.exists() || it.delete()) { "Cannot remove audio from the shared folder" }
+                        }
                         continue
                     }
                     val localText = notes.read(note.id)

@@ -13,8 +13,8 @@ android {
         applicationId = "com.pimax.whisperflow"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.3-neo"
+        versionCode = 6
+        versionName = "1.4-neo"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -74,6 +74,7 @@ android {
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("org.commonmark:commonmark:0.22.0")
+    implementation(project(":rich-editor"))
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test:core:1.6.1")

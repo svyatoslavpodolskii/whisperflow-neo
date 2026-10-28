@@ -36,6 +36,7 @@ class PimaxAuthApi(private val authUrl: String) {
      * Returns unauthenticated result on any network error.
      */
     suspend fun whoami(): WhoAmIResult = withContext(Dispatchers.IO) {
+        if (!validServiceUrl(authUrl)) return@withContext WhoAmIResult(false, error = "Не настроен внешний сервер. Укажите http://адрес:порт в настройках сервера.")
         try {
             val url = URL("$authUrl/api/whoami")
             val connection = (url.openConnection() as HttpURLConnection).apply {

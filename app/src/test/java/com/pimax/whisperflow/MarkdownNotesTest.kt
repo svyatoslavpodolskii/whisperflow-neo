@@ -15,7 +15,33 @@ import java.util.UUID
 @Config(sdk = [34])
 class MarkdownNotesTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
-    @Before fun reset() { context.deleteDatabase("markdown_notes.db"); File(context.filesDir, "notes").deleteRecursively() }
+    @Before fun reset() {
+        AudioInboxRepository.reopenForTests(context)
+        context.deleteDatabase("markdown_notes.db")
+        File(context.filesDir, "notes").deleteRecursively()
+    }
+
+    @Test fun upgradingVersionThreePreservesExistingMarkdownAndAddsReadState() {
+        val id = UUID.randomUUID().toString()
+        val old = object : android.database.sqlite.SQLiteOpenHelper(context, "markdown_notes.db", null, 3) {
+            override fun onCreate(db: android.database.sqlite.SQLiteDatabase) {
+                db.execSQL("""CREATE TABLE notes(id TEXT PRIMARY KEY, title TEXT NOT NULL, fileName TEXT NOT NULL,
+                    createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, recordingId TEXT, audioPath TEXT,
+                    edited INTEGER NOT NULL DEFAULT 0, transcript TEXT NOT NULL DEFAULT '', documentUri TEXT,
+                    syncedHash TEXT, deleted INTEGER NOT NULL DEFAULT 0, deleteAudio INTEGER NOT NULL DEFAULT 0, deletedAt INTEGER)""")
+            }
+            override fun onUpgrade(db: android.database.sqlite.SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        }
+        old.writableDatabase.execSQL("INSERT INTO notes(id,title,fileName,createdAt,updatedAt) VALUES(?,?,?,?,?)", arrayOf(id, "Старая заметка", "old.md", 12345L, 12345L))
+        old.close()
+        val directory = File(context.filesDir, "notes").apply { mkdirs() }
+        File(directory, "$id.md").writeText("---\nneo_id: $id\n---\n\n# Старая заметка\n\n**Важно сохранить**")
+        val migrated = MarkdownNotes(context)
+        assertEquals(12345L, migrated.find(id)!!.seenAt)
+        assertTrue(migrated.read(id).contains("**Важно сохранить**"))
+        assertEquals(1, migrated.list().size)
+        migrated.close()
+    }
 
     @Test fun markdownSurvivesReopenAndIndexLoss() {
         val repo = MarkdownNotes(context)

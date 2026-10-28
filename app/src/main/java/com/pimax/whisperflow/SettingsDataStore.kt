@@ -82,7 +82,7 @@ class SettingsDataStore(private val context: Context) {
         const val DEFAULT_CHUNK_INTERVAL_MS = 1800L
         const val DEFAULT_SILENCE_TIMEOUT_MS = 1800L
         const val DEFAULT_HALLUCINATION_THRESHOLD = 0.15f
-        const val DEFAULT_TOAST_TEMPLATE = "✅ Copied: {text}"
+        const val DEFAULT_TOAST_TEMPLATE = "✅ Скопировано: {text}"
         const val DEFAULT_SERVER_ENABLED = false
         const val DEFAULT_SERVER_PORT = 8060
 
@@ -101,6 +101,13 @@ class SettingsDataStore(private val context: Context) {
         const val DEFAULT_VOICE_KEYBOARD_MODE = false
 
     }
+
+    val showTranscriptionStatus: Flow<Boolean> = context.dataStore.data.map { it[booleanPreferencesKey("show_transcription_status")] ?: true }
+    val notifyUnreadNotes: Flow<Boolean> = context.dataStore.data.map { it[booleanPreferencesKey("notify_unread_notes")] ?: false }
+    val phoneVisualization: Flow<String> = context.dataStore.data.map { it[stringPreferencesKey("phone_visualization")] ?: "BARS" }
+    suspend fun updateShowTranscriptionStatus(value: Boolean) { context.dataStore.edit { it[booleanPreferencesKey("show_transcription_status")] = value } }
+    suspend fun updateNotifyUnreadNotes(value: Boolean) { context.dataStore.edit { it[booleanPreferencesKey("notify_unread_notes")] = value } }
+    suspend fun updatePhoneVisualization(value: String) { require(value in listOf("BARS", "ORBIT", "WAVE")); context.dataStore.edit { it[stringPreferencesKey("phone_visualization")] = value } }
 
     val serverUrl: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[SERVER_URL_KEY] ?: DEFAULT_SERVER_URL
@@ -140,6 +147,7 @@ class SettingsDataStore(private val context: Context) {
     suspend fun updateInferenceMode(mode: String) {
         context.dataStore.edit { preferences ->
             preferences[INFERENCE_MODE_KEY] = mode
+            if (mode != "LLM_GATEWAY") preferences[RAMBLER_ENABLED_KEY] = false
         }
     }
 
@@ -155,7 +163,7 @@ class SettingsDataStore(private val context: Context) {
     }
 
     val gatewayUrl: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[GATEWAY_URL_KEY] ?: DEFAULT_GATEWAY_URL
+        preferences[GATEWAY_URL_KEY]?.takeIf(::validServiceUrl) ?: deriveServiceUrl(preferences[SERVER_URL_KEY] ?: DEFAULT_SERVER_URL, 8068)
     }
 
     suspend fun updateGatewayUrl(url: String) {
@@ -177,7 +185,7 @@ class SettingsDataStore(private val context: Context) {
 
     // Tasks connection: server URL
     val tasksUrl: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[TASKS_URL_KEY] ?: DEFAULT_TASKS_URL
+        preferences[TASKS_URL_KEY]?.takeIf(::validServiceUrl) ?: deriveServiceUrl(preferences[SERVER_URL_KEY] ?: DEFAULT_SERVER_URL, 8058)
     }
 
     suspend fun updateTasksUrl(url: String) {
@@ -269,12 +277,12 @@ class SettingsDataStore(private val context: Context) {
     }
 
     val ramblerEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[RAMBLER_ENABLED_KEY] ?: DEFAULT_RAMBLER_ENABLED
+        (preferences[RAMBLER_ENABLED_KEY] ?: DEFAULT_RAMBLER_ENABLED) && preferences[INFERENCE_MODE_KEY] == "LLM_GATEWAY"
     }
 
     suspend fun updateRamblerEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
-            preferences[RAMBLER_ENABLED_KEY] = enabled
+            preferences[RAMBLER_ENABLED_KEY] = enabled && preferences[INFERENCE_MODE_KEY] == "LLM_GATEWAY"
         }
     }
 
@@ -317,7 +325,7 @@ class SettingsDataStore(private val context: Context) {
 
     // Streak Tracker connection: server URL
     val streakUrl: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[STREAK_URL_KEY] ?: DEFAULT_STREAK_URL
+        preferences[STREAK_URL_KEY]?.takeIf(::validServiceUrl) ?: deriveServiceUrl(preferences[SERVER_URL_KEY] ?: DEFAULT_SERVER_URL, 8055)
     }
 
     suspend fun updateStreakUrl(url: String) {
@@ -337,7 +345,7 @@ class SettingsDataStore(private val context: Context) {
     }
 
     val assistantUrl: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[ASSISTANT_URL_KEY] ?: DEFAULT_ASSISTANT_URL
+        preferences[ASSISTANT_URL_KEY]?.takeIf(::validServiceUrl) ?: deriveServiceUrl(preferences[SERVER_URL_KEY] ?: DEFAULT_SERVER_URL, 8073)
     }
 
     suspend fun updateAssistantUrl(url: String) {
@@ -372,7 +380,9 @@ class SettingsDataStore(private val context: Context) {
 
     // Transcription tuning: toast template
     val toastTemplate: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[TOAST_TEMPLATE_KEY] ?: DEFAULT_TOAST_TEMPLATE
+        (preferences[TOAST_TEMPLATE_KEY] ?: DEFAULT_TOAST_TEMPLATE).let {
+            if (it == "✅ Copied: {text}" || it == DEFAULT_TOAST_TEMPLATE) com.pimax.whisperflow.sync.UiLanguage.wrap(context).getString(R.string.neo_default_toast) else it
+        }
     }
     suspend fun updateToastTemplate(template: String) {
         context.dataStore.edit { it[TOAST_TEMPLATE_KEY] = template }
